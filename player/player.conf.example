@@ -1,0 +1,23 @@
+[server]
+url = https://signage.example.com
+player_key = replace-me
+
+[output]
+address = 239.1.1.10          ; UDP multicast group (a unicast IP also works)
+port = 1234
+ttl = 4
+interface =                   ; optional source IP for multicast
+resolution = 1920x1080        ; or 1280x720
+fps = 30
+video_bitrate_kbps = 6000
+mux_rate_kbps = 7000          ; CBR transport stream for modulators
+service_name = In-House
+service_provider = Caritech
+service_id = 1
+pmt_pid = 4096
+video_pid = 256               ; audio PID is video_pid + 1
+
+[render]
+display = :99
+render_port = 8089
+vaapi_device = /dev/dri/renderD128

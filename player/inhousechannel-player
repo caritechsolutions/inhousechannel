@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /opt/inhousechannel/player/venv/bin/python -m inhousechannel "$@"

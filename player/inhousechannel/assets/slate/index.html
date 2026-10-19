@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>inhousechannel slate</title>
+<style>
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #0b1a2a;
+    font-family: "DejaVu Sans", Arial, sans-serif; color: #fff; }
+  #bg { position: absolute; inset: 0;
+    background: radial-gradient(1200px 800px at 30% 30%, #17405e 0%, #0b1a2a 70%); }
+  #logo { position: absolute; left: 120px; top: 120px; font-size: 64px; font-weight: bold; letter-spacing: 2px; }
+  #sub { position: absolute; left: 120px; top: 210px; font-size: 30px; color: #8fb3c9; }
+  #clock { position: absolute; right: 120px; top: 110px; font-size: 120px; font-weight: bold; text-align: right; }
+  #date { position: absolute; right: 120px; top: 260px; font-size: 36px; color: #8fb3c9; text-align: right; }
+  #info { position: absolute; left: 120px; top: 480px; font-size: 34px; line-height: 1.6; color: #cfe3f0; }
+  #ticker { position: absolute; left: 0; bottom: 0; width: 1920px; height: 110px; background: #c62828; overflow: hidden; white-space: nowrap; }
+  #ticker span { display: inline-block; line-height: 110px; font-size: 56px; padding-left: 1920px;
+    animation: scroll 40s steps(1200) infinite; }   /* 1200 steps / 40 s = 30 fps */
+  @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<div id="logo">IN-HOUSE CHANNEL</div>
+<div id="sub">Caritech Solutions · player slate</div>
+<div id="clock">--:--:--</div>
+<div id="date"></div>
+<div id="info">
+  This player is running and producing a channel.<br>
+  No layout has been assigned to it yet — assign one in the signage admin.<br>
+  <span id="host"></span>
+</div>
+<div id="ticker"><span>Welcome · This is the built-in slate of the inhousechannel player · Assign a layout to replace it · </span></div>
+<script>
+  function pad(n){ return n < 10 ? "0" + n : "" + n; }
+  function tick(){
+    var d = new Date();
+    document.getElementById("clock").textContent = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    document.getElementById("date").textContent = d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  }
+  tick(); setInterval(tick, 500);
+  fetch("/status.json").then(function(r){ return r.json(); }).then(function(s){
+    document.getElementById("host").textContent = "Player " + s.hostname + " · v" + s.version + " · output " + s.output;
+  }).catch(function(){});
+</script>
+</body>
+</html>

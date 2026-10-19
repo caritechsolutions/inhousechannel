@@ -1,0 +1,23 @@
+[Unit]
+Description=inhousechannel signage player (Chrome + ffmpeg -> UDP MPEG-TS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/inhousechannel/player/venv/bin/python -m inhousechannel run
+Environment=PYTHONUNBUFFERED=1
+Environment=LIBVA_DRIVER_NAME=iHD
+WorkingDirectory=/var/lib/inhousechannel
+RuntimeDirectory=inhousechannel
+StateDirectory=inhousechannel
+Restart=always
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=15
+Nice=-5
+# Chrome and the GPU encoder want real memory headroom; never let the OOM killer pick us first
+OOMScoreAdjust=-500
+
+[Install]
+WantedBy=multi-user.target

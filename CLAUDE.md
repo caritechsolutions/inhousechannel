@@ -261,3 +261,22 @@ Every step ends with the player still producing a continuous TS on the test box.
 - Scripts are POSIX-ish bash with `set -euo pipefail`; everything logs to journald.
 - Keep this file current: when a §1 number is re-measured or a decision changes,
   update it here, not in chat.
+
+---
+
+## Build log
+
+### Step 1 — player skeleton (built 2026-10-19, awaiting verification on the hotel box)
+
+- `player/inhousechannel/` Python 3.8+ package, stdlib only: `config.py` (INI →
+  dataclasses), `pipeline.py` (Xvfb / Chrome / ffmpeg command lines — the ffmpeg graph is the
+  measured GPU-convert path), `renderserver.py` (127.0.0.1:8089 serving the active layout
+  dir, built-in slate in `assets/slate/` until step 2 syncs real layouts, `/status.json`),
+  `supervisor.py` (Proc with stderr tail + per-process backoff; Xvfb death restarts the chain,
+  Chrome or ffmpeg death restarts only that process; status to `/run/inhousechannel/status.json`
+  every 10 s), `__main__.py` CLI `run|status|preview|selftest|init|ffmpeg-cmd|version`.
+- `player/install.sh` (curl | bash), `inhousechannel-player.service` (runs as root for now;
+  `LIBVA_DRIVER_NAME=iHD`), `player.conf.example`, `/usr/local/bin/inhousechannel-player`.
+  The installer uses the own ffmpeg at `/opt/inhousechannel/bin/ffmpeg` when present, else the
+  system one (video regions wait for step 5).
+- Not yet: sync, schedule, heartbeat (step 2); video regions (step 5).
