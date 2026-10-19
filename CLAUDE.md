@@ -152,12 +152,35 @@ self-test encode and prints measured fps and CPU.
 
 ## 3. Content server (`server/`)
 
-Node.js 20 + Express + SQLite (file DB, nightly backup copy); static admin UI in
-plain HTML/JS (no build step) — match codenameduck's conventions where sensible.
-Runs as a systemd service on its own Ubuntu VM, plain HTTP on an internal port,
-TLS terminated by Nginx Proxy Manager. Multi-tenant: one **site** per hotel; a site
-is reached at its own hostname (e.g. `nothingbox.signage.caritech.net`); a super-admin
-hostname manages sites.
+**Stack = codenameduck's, verified 2026-10-19 from its repo** (public:
+`https://github.com/caritechsolutions/codenameduck`, clone it read-only for reference):
+Node.js 20 + Express + better-sqlite3 + ws on the server; admin UI = Vite + React served by
+Node under `/admin`; forward-only SQL migrations; bcryptjs sessions in an HttpOnly cookie.
+Reuse, by copying into this repo (not by depending on codenameduck):
+
+- `shared/layout-model.js` (schema-2 layout JSON: `canvas`, `pages`, `zones` with
+  `{id,type,x,y,w,h,style,…}`), `shared/zone-draw.js` + `shared/zones.css` (the one drawing
+  implementation used by both the editor preview and the on-screen renderer),
+  `shared/fonts.json` + the OFL `.woff2` fonts, `shared/layout-templates.json`.
+- `admin/src/editor/*` (CanvasEditor, ZonePanel, Palette, PageNavigator, geometry.js,
+  LayoutPreview) and `admin/src/components/MediaPicker.jsx`, `server/src/media.js`
+  (magic-byte typing, sharp thumbnails), `server/src/auth.js`, `server/src/tenants.js`
+  (tenant from `Host` header), `server/src/weather.js` (Open-Meteo).
+
+Signage differences from coopcentric, applied when copying: no TV/remote-control concepts
+(drop `channel_list`, `menu`, `button`, `apps`, `app_launcher`, `banner`, `digits`, `popup`,
+keys, actions, focus); `pages` become timed pages (each page has `duration_s`; the renderer
+cycles them — this replaces Playlist for most uses); zone types = `text`, `image`,
+`slideshow` (new: images + interval + transition), `video` (new semantics: a clip playlist
+region, max one, rendered by ffmpeg — the page draws a transparent hole), `ticker` (new:
+scrolling text / RSS, 30 fps stepped), `clock`, `date`, `weather`, `qr` (new), `html`
+(iframe URL), `shape`. `shared/zone-types.json` is the single list, as in codenameduck.
+The **player's renderer page** is `zone-draw.js` running in Chrome with `env` pointed at the
+local cache — the same code the editor preview runs.
+
+Runs as a systemd service on its own Ubuntu VM, plain HTTP on an internal port, TLS and
+hostnames by Nginx Proxy Manager. Multi-tenant: one **site** per hotel; a site is reached at
+its own hostname (e.g. `nothingbox.signage.caritech.net`); superadmin manages sites.
 
 ### 3.1 Entities
 
@@ -165,32 +188,26 @@ hostname manages sites.
 - **User**: email, password (argon2), role: `superadmin` | `site-admin` | `editor`.
 - **Media**: images (png/jpg/svg/webp), videos (any input → normalised, §3.4), audio
   (mp3/aac → normalised AAC), fonts. Stored under `/var/lib/inhousechannel/media/<site>/`.
-- **Layout**: canvas 1920×1080 (720p layouts scale from the same JSON); JSON document of
-  regions; each region is one widget type: image, slideshow, video (max one per layout),
-  text, ticker/RSS, clock, date, weather, QR code, web page (iframe URL), shape. Exported
-  as self-contained HTML + assets for the player's renderer.
-- **Playlist**: ordered list of layouts with durations (used where a channel cycles
-  between layouts).
-- **Schedule**: per player — default playlist plus dated/time-of-day/day-of-week
-  overrides, priority ordered.
+- **Layout**: codenameduck schema-2 JSON (see above) restricted to the signage zone types;
+  canvas 1920×1080 (720p scales from the same JSON); pages carry `duration_s`.
+- **Schedule**: per player — default layout plus dated/time-of-day/day-of-week overrides,
+  priority ordered.
 - **Player**: belongs to a site; name, key, output settings mirror (read-only display
   of what the box reports), last heartbeat, thumbnail, version, health.
 
 ### 3.2 Layout editor
 
-Start from the layout editor built in codenameduck (coopcentric); copy it into
-`server/public/editor/` and adapt. Required: drag/resize regions on a 16:9 canvas with
-snapping, z-order, per-widget property panel, live preview that runs the real widget
-code, undo/redo, duplicate layout, template gallery. The editor's output format is the
-layout JSON in §3.1 — the same JSON drives the preview and the player, so what the
-editor shows is what the channel shows.
+Copy codenameduck's `admin/src/editor/*` into `admin/src/editor/` and strip the TV-only
+panels (actions, key map, focus, screens). Keep: drag/resize with snapping and guides,
+multi-select, z-order, per-zone property panel, undo/redo 50, Ctrl-D, page navigator
+(now with per-page duration), live preview via the shared drawer, templates, media picker.
 
 ### 3.3 Player API (bearer `player_key`)
 
 ```
 GET  /api/player/manifest      → { schedule, layouts[], media[{id,sha256,size,url}] } with ETag
 GET  /api/player/media/:id     → file (Range supported)
-GET  /api/player/layout/:id    → rendered HTML bundle (zip) for the local renderer
+GET  /api/player/renderer      → renderer bundle (zone-draw.js, zones.css, fonts) with ETag
 POST /api/player/heartbeat     → status JSON (+ optional thumbnail, multipart)
 GET  /api/player/time          → server time (sanity check only)
 ```
@@ -217,7 +234,9 @@ prompt, prints the internal port to proxy.
 ```
 CLAUDE.md
 README.md
-server/   package.json, src/, public/ (admin UI, editor), install.sh, inhousechannel-server.service
+server/   package.json, src/ (Express), migrations; install.sh; inhousechannel-server.service
+admin/    Vite + React admin UI (editor copied from codenameduck), built to admin/dist
+shared/   layout-model.js, zone-draw.js, zones.css, zone-types.json, fonts — used by admin, server and player
 player/   player/ (python package), install.sh, inhousechannel-player.service, player.conf.example
 tools/    ffmpeg build script for the player binary (Docker-based, outputs the release asset)
 docs/     architecture notes; keep §1 numbers here when they are re-measured
@@ -229,7 +248,7 @@ docs/     architecture notes; keep §1 numbers here when they are re-measured
    UDP TS out. Verify on the hotel box against the §1 budget before anything else.
 2. Player: local renderer HTTP server, sync, schedule evaluation, heartbeat.
 3. Server: auth, sites, media upload + normalisation, player registration, manifest API.
-4. Editor port from codenameduck + layout export.
+4. Admin UI: editor copied from codenameduck, media library, sites, players, schedules.
 5. Video regions (`overlay_vaapi`) + own ffmpeg build + release pipeline.
 6. Admin dashboard: player health, thumbnails, schedules.
 
