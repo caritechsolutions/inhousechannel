@@ -320,3 +320,27 @@ Every step ends with the player still producing a continuous TS on the test box.
   `/opt/inhousechannel` then ran the player as the unit does. The ffmpeg capability check
   must compare the encoder *name column* (`awk '{print $2}'`), not grep the line.
 - Not yet: sync, schedule, heartbeat (step 2); video regions (step 5).
+
+### Steps 2–4 — player sync, content server, admin UI (built 2026-10-28, awaiting the VM)
+
+- Player (`player/inhousechannel/sync.py`): bearer-key client; manifest with ETag/304; renderer
+  bundle unpacked to `cache/renderer/`; media to `cache/media/<id>` (sha256-verified, no
+  extension — the renderer maps `media:<id>` → `./media/<id>`); each layout materialised as
+  `cache/layouts/<id>/` (render.html as index.html + layout.json + ctx.json + hard-linked media)
+  so Chrome renders fully offline. Schedule evaluated locally (bit0 = Sunday like the server;
+  overnight windows belong to the start day; priority then lowest id). Heartbeat every 60 s,
+  480-px JPEG thumbnail every 5 min. `inhousechannel-player pair <url> <key>` / `sync` CLI.
+- Render server serves a shell page (`/`) whose iframe polls `/current.json` and swaps between
+  `/slate/` and `/layouts/<id>/index.html?res=WxH` — layout changes never restart Chrome, so
+  the TS never breaks. `?res=` scales the 1920×1080 stage to the output.
+- Server and admin: see `docs/server-build-notes.md` and `docs/admin-build-notes.md`. Fixed
+  after review: `upgradeLayout()` no longer deletes zone `items` (it emptied every ticker);
+  `POST /players` honours `default_layout_id`.
+- Verified here end to end: superadmin → site → player (key + pair command) → PNG upload →
+  layout from the lobby template → player paired, synced, switched slate→layout, frame decoded
+  off the UDP TS; heartbeat + thumbnail visible on the dashboard; admin UI driven in headless
+  Chromium (login, dashboard, players, layouts, media, editor) with no page errors.
+  `server/install.sh` ran here up to systemd (stubbed).
+- Known gaps: weather route not wired; uploaded fonts not exposed as @font-face; no WebSocket
+  push (players poll every 60 s); editor cosmetics (pages row, ticker label overlap);
+  video regions (step 5) not started.
