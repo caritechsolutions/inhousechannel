@@ -11,8 +11,9 @@ from typing import Dict, List, Optional
 
 from . import __version__
 from .config import RUN_DIR, PlayerConf
-from .pipeline import chrome_command, ffmpeg_command, udp_url, xvfb_command
+from .pipeline import chrome_command, ffmpeg_command, snapshot_command, udp_url, xvfb_command
 from .renderserver import RenderServer, hostname
+from .sync import Cache, Syncer
 
 log = logging.getLogger("inhousechannel")
 
@@ -99,7 +100,10 @@ class Supervisor:
         self.conf = conf
         self.stop_requested = False
         self.started_at = time.time()
-        self.render = RenderServer(conf.render.render_port, self.status)
+        self.cache = Cache()
+        self.syncer = Syncer(conf, self.cache)
+        self.render = RenderServer(conf.render.render_port, self.status,
+                                   layouts_dir=os.path.join(self.cache.root, "layouts"))
         self.xvfb = Proc("Xvfb", lambda: xvfb_command(conf))
         self.chrome = Proc("chrome", lambda: chrome_command(conf, self.render.url),
                            env={"DISPLAY": conf.render.display, "HOME": "/var/lib/inhousechannel"})
@@ -121,7 +125,13 @@ class Supervisor:
             "resolution": self.conf.output.resolution,
             "fps": self.conf.output.fps,
             "ffmpeg_binary": self.conf.ffmpeg,
-            "render_root": self.render.root,
+            "server": self.conf.server.url or None,
+            "paired": self.syncer.server.configured,
+            "layout_id": self.render.current_layout_id,
+            "render_url": self.render.current_url,
+            "last_sync_at": self.syncer.last_sync_at,
+            "sync_error": self.syncer.last_error,
+            "cache_bytes": self.cache.size_bytes(),
             "procs": {
                 p.name: {"alive": p.alive(), "pid": p.p.pid if p.alive() else None,
                          "uptime_s": int(p.uptime()), "restarts_last_hour": p.restarts_last_hour(),
@@ -181,11 +191,16 @@ class Supervisor:
         log.info("inhousechannel player %s: display %s, render %s, ffmpeg %s, output %s",
                  __version__, self.conf.render.display, self.render.url, self.conf.ffmpeg, udp_url(self.conf))
         try:
+            self._apply_schedule()                # show a cached layout before Chrome starts
             self.start_all("initial start")
-            last_status = 0.0
+            threading.Thread(target=self._sync_loop, name="sync", daemon=True).start()
+            last_status = last_sched = 0.0
             while not self.stop_requested:
                 time.sleep(0.5)
                 self._check()
+                if time.time() - last_sched > 5:
+                    self._apply_schedule()
+                    last_sched = time.time()
                 if time.time() - last_status > 10:
                     self.write_status()
                     last_status = time.time()
@@ -194,6 +209,52 @@ class Supervisor:
             self.render.stop()
             self.write_status()
         return 0
+
+    def _apply_schedule(self) -> None:
+        lid = self.syncer.current_layout_id()
+        d = self.syncer.current_layout_dir()
+        if self.render.set_current(lid, d):
+            self.note("now showing %s" % ("layout %s" % lid if d else "slate"))
+
+    def _sync_loop(self) -> None:
+        last_thumb = 0.0
+        while not self.stop_requested:
+            try:
+                if self.syncer.sync_once():
+                    self._apply_schedule()
+            except Exception as e:
+                log.warning("sync: %s", e)
+            self.syncer.heartbeat(self._heartbeat_body())
+            if time.time() - last_thumb > 300 and self.xvfb.alive():
+                try:
+                    self.syncer.thumbnail(self._thumbnail_jpeg())
+                    last_thumb = time.time()
+                except Exception as e:
+                    log.debug("thumbnail: %s", e)
+            for _ in range(self.syncer.interval_s * 2):
+                if self.stop_requested:
+                    return
+                time.sleep(0.5)
+
+    def _heartbeat_body(self) -> Dict:
+        return {
+            "version": __version__, "hostname": hostname(), "uptime_s": int(time.time() - self.started_at),
+            "layout_id": self.render.current_layout_id, "resolution": self.conf.output.resolution,
+            "fps": self.conf.output.fps, "output": udp_url(self.conf).split("?")[0].replace("udp://", ""),
+            "video_codec": self.conf.output.video_codec, "bitrate_kbps": self.conf.output.video_bitrate_kbps,
+            "cpu_pct": cpu_percent(), "load_avg": os.getloadavg()[0],
+            "restarts_last_hour": sum(p.restarts_last_hour() for p in (self.xvfb, self.chrome, self.ffmpeg)),
+            "procs_alive": {p.name: p.alive() for p in (self.xvfb, self.chrome, self.ffmpeg)},
+            "cache_bytes": self.cache.size_bytes(), "last_sync_at": self.syncer.last_sync_at,
+            "sync_error": self.syncer.last_error, "events": self.events[-3:],
+        }
+
+    def _thumbnail_jpeg(self) -> bytes:
+        cmd = snapshot_command(self.conf, "-")
+        cmd[cmd.index("-frames:v") + 2:] = ["-vf", "scale=480:-2", "-q:v", "6", "-f", "mjpeg", "-"]
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15,
+                           env=dict(os.environ, DISPLAY=self.conf.render.display))
+        return r.stdout
 
     def _on_signal(self, signum, frame) -> None:
         log.info("signal %d: stopping", signum)
@@ -226,8 +287,25 @@ class Supervisor:
             self._restart(self.ffmpeg, "ffmpeg exited")
 
 
+_cpu_prev = None
+
+
+def cpu_percent() -> float:
+    """Whole-box CPU % since the previous call (0–100 × cores), from /proc/stat."""
+    global _cpu_prev
+    try:
+        with open("/proc/stat") as f:
+            parts = [float(x) for x in f.readline().split()[1:8]]
+    except Exception:
+        return 0.0
+    total, idle = sum(parts), parts[3] + parts[4]
+    prev, _cpu_prev = _cpu_prev, (total, idle)
+    if not prev or total == prev[0]:
+        return 0.0
+    return round(100.0 * (1 - (idle - prev[1]) / (total - prev[0])) * os.cpu_count(), 1)
+
+
 def snapshot(conf: PlayerConf, out_png: str) -> None:
-    from .pipeline import snapshot_command
     subprocess.run(snapshot_command(conf, out_png), check=True, env=dict(os.environ, DISPLAY=conf.render.display))
 
 
