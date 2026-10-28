@@ -4,17 +4,17 @@
 <meta charset="utf-8">
 <title>inhousechannel slate</title>
 <style>
-  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #0b1a2a;
+  html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; background: #0b1a2a;
     font-family: "DejaVu Sans", Arial, sans-serif; color: #fff; }
   #bg { position: absolute; inset: 0;
     background: radial-gradient(1200px 800px at 30% 30%, #17405e 0%, #0b1a2a 70%); }
-  #logo { position: absolute; left: 120px; top: 120px; font-size: 64px; font-weight: bold; letter-spacing: 2px; }
-  #sub { position: absolute; left: 120px; top: 210px; font-size: 30px; color: #8fb3c9; }
-  #clock { position: absolute; right: 120px; top: 110px; font-size: 120px; font-weight: bold; text-align: right; }
-  #date { position: absolute; right: 120px; top: 260px; font-size: 36px; color: #8fb3c9; text-align: right; }
-  #info { position: absolute; left: 120px; top: 480px; font-size: 34px; line-height: 1.6; color: #cfe3f0; }
-  #ticker { position: absolute; left: 0; bottom: 0; width: 1920px; height: 110px; background: #c62828; overflow: hidden; white-space: nowrap; }
-  #ticker span { display: inline-block; line-height: 110px; font-size: 56px; padding-left: 1920px;
+  #logo { position: absolute; left: 6vw; top: 10vh; font-size: 6vh; font-weight: bold; letter-spacing: 2px; }
+  #sub { position: absolute; left: 6vw; top: 19vh; font-size: 2.8vh; color: #8fb3c9; }
+  #clock { position: absolute; right: 6vw; top: 9vh; font-size: 11vh; font-weight: bold; text-align: right; }
+  #date { position: absolute; right: 6vw; top: 24vh; font-size: 3.3vh; color: #8fb3c9; text-align: right; }
+  #info { position: absolute; left: 6vw; top: 44vh; font-size: 3.2vh; line-height: 1.6; color: #cfe3f0; }
+  #ticker { position: absolute; left: 0; bottom: 0; width: 100vw; height: 10vh; background: #c62828; overflow: hidden; white-space: nowrap; }
+  #ticker span { display: inline-block; line-height: 10vh; font-size: 5.2vh; padding-left: 100vw;
     animation: scroll 40s steps(1200) infinite; }   /* 1200 steps / 40 s = 30 fps */
   @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
 </style>

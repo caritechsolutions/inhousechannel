@@ -22,10 +22,11 @@ class OutputConf:
     port: int = 1234
     ttl: int = 4
     interface: str = ""            # optional source IP for multicast (localaddr=)
-    resolution: str = "1920x1080"
+    resolution: str = "1280x720"   # CPU-only MPEG-2: 720p measured at ~40 % of one core; 1080p ~2.5x that
     fps: int = 30
-    video_bitrate_kbps: int = 6000
-    mux_rate_kbps: int = 7000
+    video_codec: str = "mpeg2"     # mpeg2 (default, universal STB/modulator support) | h264 (libx264, more CPU)
+    video_bitrate_kbps: int = 8000
+    mux_rate_kbps: int = 10000
     service_name: str = "In-House"
     service_provider: str = "Caritech"
     service_id: int = 1
@@ -49,9 +50,9 @@ class OutputConf:
 class RenderConf:
     display: str = ":99"
     render_port: int = 8089
-    vaapi_device: str = "/dev/dri/renderD128"
     chrome: str = "google-chrome"
     ffmpeg: str = ""               # empty → own ffmpeg if present, else system ffmpeg
+    threads: int = 2               # encoder threads
     chrome_profile: str = os.path.join(STATE_DIR, "chrome")
 
 
@@ -96,6 +97,8 @@ def load(path: Optional[str] = None) -> PlayerConf:
         _apply("output", conf.output, cp)
         _apply("render", conf.render, cp)
     conf.output.width  # validates the resolution string
+    if conf.output.video_codec not in ("mpeg2", "h264"):
+        raise ValueError("video_codec must be mpeg2 or h264")
     return conf
 
 
@@ -113,6 +116,7 @@ def write_example(path: str, conf: PlayerConf) -> None:
         "interface = %s" % conf.output.interface,
         "resolution = %s" % conf.output.resolution,
         "fps = %d" % conf.output.fps,
+        "video_codec = %s" % conf.output.video_codec,
         "video_bitrate_kbps = %d" % conf.output.video_bitrate_kbps,
         "mux_rate_kbps = %d" % conf.output.mux_rate_kbps,
         "service_name = %s" % conf.output.service_name,
@@ -124,7 +128,7 @@ def write_example(path: str, conf: PlayerConf) -> None:
         "[render]",
         "display = %s" % conf.render.display,
         "render_port = %d" % conf.render.render_port,
-        "vaapi_device = %s" % conf.render.vaapi_device,
+        "threads = %d" % conf.render.threads,
         "",
     ]
     os.makedirs(os.path.dirname(path), exist_ok=True)

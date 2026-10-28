@@ -38,20 +38,34 @@ Measured, with rist running (2 cores = 200 %):
 | ffmpeg x11grab → `hwupload,scale_vaapi=format=nv12` → `h264_vaapi` (GPU convert) | ~26 % |
 | Synthetic 1080p30 `h264_vaapi` encode alone | 92 fps, 3.07× realtime, ~27 % of one core |
 
-Total with GPU-side conversion and no in-browser video ≈ 130 % → viable 24/7.
+**Decision 2026-10-28 (Richard): the player must not depend on GPU access.** Second box
+"worthingcourt" (same Celeron 3965U, load ~1.5 before the test) measured CPU-only:
+
+| CPU-only, `mpeg2video` | CPU |
+|---|---|
+| Synthetic 1080p30 MPEG-2 12 Mb/s encode | 61 % of one core (2.2× realtime) |
+| Synthetic 720p30 MPEG-2 8 Mb/s encode | 26 % of one core |
+| **Realtime 720p: x11grab + mpeg2video + TS → UDP, Chrome slate with 30 fps ticker, rist running** | **ffmpeg 34–42 %, Chrome ~15 %, Xvfb 3–6 %; box 34–51 % idle** |
+
+So the production design is **CPU-only MPEG-2 at 720p** (~60 % of the box's 200 %, no driver,
+no custom ffmpeg); `h264` via libx264 stays a config option for sites that need it. 1080p
+CPU-only would be ~225 % with the rist load and is not offered on these boxes. The earlier
+VAAPI measurements stay here as the record of why the GPU path was dropped.
+
 These numbers drive the architecture below. **Rules:**
 
-1. Video never plays inside the browser. Chrome renders graphics only; ffmpeg decodes
-   video clips on the iGPU and overlays them.
-2. Colour conversion and scaling happen on the GPU (`hwupload` of the RGB grab, then
-   `scale_vaapi` / `overlay_vaapi`), never in CPU filters.
-3. `overlay_vaapi` needs ffmpeg ≥ 5.0; Ubuntu 20.04 ships 4.2. The player installer
-   provides its own ffmpeg (prebuilt binary published as a GitHub Release asset of this
-   repo, built with `--enable-vaapi --enable-libdrm --enable-libx264`; fall back to
-   building from source if the asset is missing). Installed to
-   `/opt/inhousechannel/bin/ffmpeg`; never replaces the system ffmpeg.
+1. Video never plays inside the browser (software decode + compositing in Chrome measured
+   ~60 % on its own). Chrome renders graphics only; ffmpeg decodes video clips (CPU, the
+   server pre-normalises them to 720p MPEG-2/H.264 so decode is cheap) and overlays them
+   with the software `overlay` filter. The CPU cost of that overlay path is unmeasured —
+   measure it on a hotel box before step 5 is designed.
+2. No GPU, VAAPI or custom ffmpeg dependency anywhere in the player; the distro ffmpeg is
+   enough (`mpeg2video`, `libx264`, `x11grab`, `overlay`).
+3. Canvas is 1280×720 by default. Layouts are authored at 1920×1080 in the editor and the
+   renderer scales the page (CSS zoom) to the player's resolution.
 4. Layout CSS animations run at 30 fps (`steps()` or 30 fps keyframe cadence) — 60 fps
-   repaints roughly double Chrome's cost for no benefit on a 30 fps channel.
+   repaints roughly double Chrome's cost for no benefit on a 30 fps channel. The slate's
+   ticker is the reference (`steps(N)` with N = seconds × 30).
 5. Chrome is managed by PID, never `pkill -f`; a second `google-chrome` invocation
    hands its URL to the running instance and exits ("Opening in existing browser
    session") — this fooled the tests. Launch with a dedicated `--user-data-dir`.
@@ -61,8 +75,7 @@ These numbers drive the architecture below. **Rules:**
    --autoplay-policy=no-user-gesture-required`. GStreamer `wpesrc` was rejected:
    Ubuntu 20.04's GStreamer 1.16 is too old for reliable headless use.
 
-Packages the player installer must handle (confirmed): `vainfo
-intel-media-va-driver-non-free xvfb`, Google Chrome stable from
+Packages the player installer must handle (confirmed): `xvfb ffmpeg`, Google Chrome stable from
 `https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb` (the Ubuntu
 `chromium-browser` package is a snap stub — do not use it).
 
@@ -85,10 +98,11 @@ address    = 239.1.1.10                        ; UDP multicast (unicast allowed)
 port       = 1234
 ttl        = 4
 interface  = (optional source interface)
-resolution = 1920x1080                         ; or 1280x720
+resolution = 1280x720                          ; default; 1080p needs a bigger box
 fps        = 30
-video_bitrate_kbps = 6000
-mux_rate_kbps      = 7000                      ; CBR TS for modulators
+video_codec = mpeg2                            ; or h264 (libx264)
+video_bitrate_kbps = 8000                      ; MPEG-2 CBR
+mux_rate_kbps      = 10000                     ; CBR TS for modulators
 service_name = In-House
 service_id   = 1
 pmt_pid = 4096 ; video_pid = 256 ; audio_pid = 257
@@ -98,12 +112,12 @@ pmt_pid = 4096 ; video_pid = 256 ; audio_pid = 257
 
 ```
                 ┌───────────────┐   X11 (RGB)   ┌─────────────────────────────┐
-  layout HTML → │ Chrome + Xvfb │ ─────────────▶│ ffmpeg                       │
-  (local files) │ 1920×1080     │               │ x11grab → hwupload           │
-                └───────────────┘               │ clip.mp4 → hw decode ─┐      │
-                                                │ overlay_vaapi ◀───────┘      │ ─▶ UDP TS
+  layout HTML → │ Chrome + Xvfb │ ─────────────▶│ ffmpeg (CPU only)            │
+  (local files) │ 1280×720      │               │ x11grab → yuv420p            │
+                └───────────────┘               │ clip.mp4 → decode ────┐      │
+                                                │ overlay ◀─────────────┘      │ ─▶ UDP TS
                 ┌───────────────┐               │ audio: silent / music / clip │
-                │ sync + sched  │ ─ controls ─▶ │ h264_vaapi + aac → mpegts    │
+                │ sync + sched  │ ─ controls ─▶ │ mpeg2video + aac → mpegts    │
                 └───────────────┘               └─────────────────────────────┘
 ```
 
@@ -114,8 +128,7 @@ pmt_pid = 4096 ; video_pid = 256 ; audio_pid = 257
   cached assets; it must keep rendering with the WAN down.
 - **Video regions**: the layout marks at most one video region (x, y, w, h); the page
   leaves it transparent/black. The daemon drives ffmpeg to decode the region's clip
-  playlist (concat demuxer, looped) with `h264_vaapi`/`hevc_vaapi` hw decode and
-  `overlay_vaapi` at that position. Clips are pre-normalised by the server (§3.4) so
+  playlist (concat demuxer, looped) and the software `overlay` filter at that position. Clips are pre-normalised by the server (§3.4) so
   the player never transcodes.
 - **Audio**: from ffmpeg, never captured from Chrome. Modes: silent AAC (default —
   an audio PID must always exist, modulators and STBs expect one), background music
@@ -142,8 +155,7 @@ pmt_pid = 4096 ; video_pid = 256 ; audio_pid = 257
 ### 2.3 `player/install.sh`
 
 Idempotent, Ubuntu 20.04/22.04/24.04, run as root:
-apt packages → VAAPI check (`vainfo` must list `VAEntrypointEncSlice`; abort with a clear
-message otherwise) → Chrome .deb → own ffmpeg to `/opt/inhousechannel/bin` → Python
+apt packages → ffmpeg check (`mpeg2video` encoder + `x11grab`) → Chrome .deb → Python
 venv in `/opt/inhousechannel/player` → prompts (or env vars) for server URL and
 player key → writes conf → enables and starts the systemd unit → runs a 10 s
 self-test encode and prints measured fps and CPU.
@@ -216,8 +228,8 @@ GET  /api/player/time          → server time (sanity check only)
 
 On upload, videos are transcoded server-side with ffmpeg (VM has no GPU; use
 `libx264 -preset medium`) to the player's profile so the box only ever hw-decodes:
-H.264 High, ≤ 1920×1080, 30 fps CFR, `-g 60`, 8 Mbps max, AAC 48 kHz stereo, MP4
-with `+faststart`. Keep the original. Show progress in the UI; the media is unusable
+H.264 High, 1280×720, 30 fps CFR, `-g 60`, 6 Mbps max, AAC 48 kHz stereo, MP4 with
+`+faststart` (720p so the player's software decode stays cheap). Keep the original. Show progress in the UI; the media is unusable
 in layouts until normalised.
 
 ### 3.5 `server/install.sh`
@@ -238,7 +250,6 @@ server/   package.json, src/ (Express), migrations; install.sh; inhousechannel-s
 admin/    Vite + React admin UI (editor copied from codenameduck), built to admin/dist
 shared/   layout-model.js, zone-draw.js, zones.css, zone-types.json, fonts — used by admin, server and player
 player/   player/ (python package), install.sh, inhousechannel-player.service, player.conf.example
-tools/    ffmpeg build script for the player binary (Docker-based, outputs the release asset)
 docs/     architecture notes; keep §1 numbers here when they are re-measured
 ```
 
@@ -249,7 +260,7 @@ docs/     architecture notes; keep §1 numbers here when they are re-measured
 2. Player: local renderer HTTP server, sync, schedule evaluation, heartbeat.
 3. Server: auth, sites, media upload + normalisation, player registration, manifest API.
 4. Admin UI: editor copied from codenameduck, media library, sites, players, schedules.
-5. Video regions (`overlay_vaapi`) + own ffmpeg build + release pipeline.
+5. Video regions (software `overlay`) — measure the decode+overlay cost on a hotel box first.
 6. Admin dashboard: player health, thumbnails, schedules.
 
 Every step ends with the player still producing a continuous TS on the test box.
@@ -266,7 +277,7 @@ Every step ends with the player still producing a continuous TS on the test box.
 
 ## Build log
 
-### Step 1 — player skeleton (built 2026-10-19, awaiting verification on the hotel box)
+### Step 1 — player skeleton (built 2026-10-19; reworked CPU-only 2026-10-28; awaiting the hotel box)
 
 - `player/inhousechannel/` Python 3.8+ package, stdlib only: `config.py` (INI →
   dataclasses), `pipeline.py` (Xvfb / Chrome / ffmpeg command lines — the ffmpeg graph is the
@@ -275,8 +286,10 @@ Every step ends with the player still producing a continuous TS on the test box.
   `supervisor.py` (Proc with stderr tail + per-process backoff; Xvfb death restarts the chain,
   Chrome or ffmpeg death restarts only that process; status to `/run/inhousechannel/status.json`
   every 10 s), `__main__.py` CLI `run|status|preview|selftest|init|ffmpeg-cmd|version`.
-- `player/install.sh` (curl | bash), `inhousechannel-player.service` (runs as root for now;
-  `LIBVA_DRIVER_NAME=iHD`), `player.conf.example`, `/usr/local/bin/inhousechannel-player`.
-  The installer uses the own ffmpeg at `/opt/inhousechannel/bin/ffmpeg` when present, else the
-  system one (video regions wait for step 5).
+- `player/install.sh` (curl | bash), `inhousechannel-player.service` (runs as root for now),
+  `player.conf.example`, `/usr/local/bin/inhousechannel-player`. Distro ffmpeg only.
+- Tested end-to-end in the dev container (Xvfb + Chromium + ffmpeg 6.1 → UDP → captured
+  with ffprobe: MPEG-2 Main 1280×720 30 fps 8 Mb/s PID 0x100 + AAC 0x101, decoded frame
+  shows the slate). Note: capturing with `ffmpeg -c copy` rewrites the SDT, so check
+  service names on the live stream, not a re-muxed file.
 - Not yet: sync, schedule, heartbeat (step 2); video regions (step 5).

@@ -1,5 +1,5 @@
 [Unit]
-Description=inhousechannel signage player (Chrome + ffmpeg -> UDP MPEG-TS)
+Description=inhousechannel signage player (Chrome + ffmpeg MPEG-2 -> UDP MPEG-TS)
 After=network-online.target
 Wants=network-online.target
 
@@ -7,7 +7,6 @@ Wants=network-online.target
 Type=simple
 ExecStart=/opt/inhousechannel/player/venv/bin/python -m inhousechannel run
 Environment=PYTHONUNBUFFERED=1
-Environment=LIBVA_DRIVER_NAME=iHD
 WorkingDirectory=/var/lib/inhousechannel
 RuntimeDirectory=inhousechannel
 StateDirectory=inhousechannel

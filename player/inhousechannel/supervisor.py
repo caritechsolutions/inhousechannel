@@ -250,6 +250,7 @@ def selftest(conf: PlayerConf, seconds: int = 10) -> Dict:
     finally:
         if own_xvfb:
             own_xvfb.terminate()
+            own_xvfb.wait(5)
     out = r.stdout.decode("utf-8", "replace")
     res = {"ok": r.returncode == 0, "exit": r.returncode, "wall_s": round(wall, 1), "ffmpeg": conf.ffmpeg}
     for line in out.splitlines():

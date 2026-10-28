@@ -1,7 +1,7 @@
-"""Builds the ffmpeg command line: X11 grab → GPU upload/convert → h264_vaapi → MPEG-TS → UDP.
+"""Builds the ffmpeg command line: X11 grab → mpeg2video (CPU) → MPEG-TS → UDP.
 
-All colour conversion happens on the iGPU (hwupload of the RGB grab + scale_vaapi), which
-measured ~26 % CPU on the Celeron 3965U versus ~68 % for the CPU `format=nv12` path.
+CPU only, no GPU dependency. Measured 2026-10-28 on a Celeron 3965U hotel box: 720p30 MPEG-2
+grab+encode+mux ≈ 34–42 % of one core while the box kept serving its rist receivers.
 """
 from typing import List
 
@@ -11,10 +11,8 @@ from .config import PlayerConf
 def ffmpeg_command(conf: PlayerConf, destination: str = None, duration_s: int = None,
                    benchmark: bool = False) -> List[str]:
     o, r = conf.output, conf.render
-    gop = o.fps * 2
     cmd = [
         conf.ffmpeg, "-y", "-hide_banner", "-nostats", "-loglevel", "warning",
-        "-vaapi_device", r.vaapi_device,
         # input 0: the virtual screen (realtime source)
         "-f", "x11grab", "-framerate", str(o.fps), "-video_size", o.resolution,
         "-draw_mouse", "0", "-thread_queue_size", "512", "-i", r.display,
@@ -23,14 +21,9 @@ def ffmpeg_command(conf: PlayerConf, destination: str = None, duration_s: int = 
     ]
     if duration_s:
         cmd += ["-t", str(duration_s)]
+    cmd += ["-map", "0:v", "-map", "1:a", "-pix_fmt", "yuv420p", "-threads", str(r.threads)]
+    cmd += video_codec_args(conf)
     cmd += [
-        "-filter_complex",
-        "[0:v]hwupload,scale_vaapi=w=%d:h=%d:format=nv12[v]" % (o.width, o.height),
-        "-map", "[v]", "-map", "1:a",
-        "-c:v", "h264_vaapi", "-profile:v", "high",
-        "-b:v", "%dk" % o.video_bitrate_kbps, "-maxrate", "%dk" % o.video_bitrate_kbps,
-        "-bufsize", "%dk" % (o.video_bitrate_kbps * 2),
-        "-g", str(gop), "-keyint_min", str(gop), "-bf", "0",
         "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
         "-f", "mpegts",
         "-mpegts_service_id", str(o.service_id),
@@ -46,6 +39,19 @@ def ffmpeg_command(conf: PlayerConf, destination: str = None, duration_s: int = 
         cmd.append("-benchmark")
     cmd.append(destination or udp_url(conf))
     return cmd
+
+
+def video_codec_args(conf: PlayerConf) -> List[str]:
+    o = conf.output
+    br = o.video_bitrate_kbps
+    if o.video_codec == "h264":
+        gop = o.fps * 2
+        return ["-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-profile:v", "high",
+                "-b:v", "%dk" % br, "-maxrate", "%dk" % br, "-bufsize", "%dk" % (br * 2),
+                "-g", str(gop), "-keyint_min", str(gop), "-x264-params", "nal-hrd=cbr:force-cfr=1"]
+    # MPEG-2: true CBR (minrate = maxrate), short GOP so modulator/STB lock is fast, 2 B-frames
+    return ["-c:v", "mpeg2video", "-b:v", "%dk" % br, "-minrate", "%dk" % br, "-maxrate", "%dk" % br,
+            "-bufsize", "%dk" % max(br // 3, 1000), "-g", "15", "-bf", "2"]
 
 
 def udp_url(conf: PlayerConf) -> str:

@@ -23,17 +23,13 @@ case "${VERSION_ID:-}" in 20.04|22.04|24.04) ;; *) echo "WARNING: untested Ubunt
 
 say "apt packages"
 apt-get update -qq
-apt-get install -y -qq git curl ca-certificates python3 python3-venv xvfb vainfo \
-  intel-media-va-driver-non-free ffmpeg fonts-dejavu-core fonts-liberation >/dev/null
+apt-get install -y -qq git curl ca-certificates python3 python3-venv xvfb ffmpeg \
+  fonts-dejavu-core fonts-liberation >/dev/null
 
-say "VAAPI hardware encoder check"
-[ -e /dev/dri/renderD128 ] || die "/dev/dri/renderD128 missing: no GPU render node (kernel/i915 driver?)"
-if ! LIBVA_DRIVER_NAME=iHD vainfo --display drm --device /dev/dri/renderD128 2>/dev/null | grep -q 'VAProfileH264.*VAEntrypointEncSlice'; then
-  # older vainfo has no --display/--device; fall back to the plain call
-  LIBVA_DRIVER_NAME=iHD vainfo 2>/dev/null | grep -q 'VAProfileH264.*VAEntrypointEncSlice' \
-    || die "no H.264 hardware encode (VAEntrypointEncSlice) via iHD — this box cannot run the player"
-fi
-echo "H.264 hardware encode: OK (iHD)"
+say "ffmpeg check"
+ffmpeg -hide_banner -encoders 2>/dev/null | grep -q ' mpeg2video ' || die "ffmpeg has no mpeg2video encoder"
+ffmpeg -hide_banner -devices 2>/dev/null | grep -q x11grab || die "ffmpeg has no x11grab input"
+echo "$(ffmpeg -version | head -1 | cut -d' ' -f1-3): mpeg2video + x11grab OK"
 
 say "Google Chrome"
 if ! command -v google-chrome >/dev/null; then
@@ -61,13 +57,6 @@ cp -r "$SRC/player/inhousechannel" "$APP/inhousechannel"
 echo "$APP" > "$APP/venv/lib/python$(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])')/site-packages/inhousechannel.pth"
 install -m 755 "$SRC/player/inhousechannel-player" /usr/local/bin/inhousechannel-player
 
-say "own ffmpeg (optional, needed for video regions)"
-if [ -x "$BIN/ffmpeg" ]; then
-  echo "present: $("$BIN/ffmpeg" -version | head -1)"
-else
-  echo "not installed yet — using system $(ffmpeg -version | head -1 | cut -d' ' -f1-3). Video regions need the own build (build order step 5)."
-fi
-
 say "configuration $CONF"
 if [ -f "$CONF" ] && [ -z "${IHC_SERVER_URL:-}" ] && [ -z "${IHC_PLAYER_KEY:-}" ]; then
   echo "kept existing $CONF"
@@ -77,10 +66,11 @@ else
     read -rp "Player key (blank for now is fine): " IHC_PLAYER_KEY; export IHC_PLAYER_KEY
     read -rp "Multicast address [239.1.1.10]: " a; export IHC_MCAST="${a:-239.1.1.10}"
     read -rp "UDP port [1234]: " p; export IHC_PORT="${p:-1234}"
+    read -rp "Resolution [1280x720]: " r; export IHC_RESOLUTION="${r:-1280x720}"
   fi
   "$APP/venv/bin/python" -m inhousechannel init
 fi
-grep -E '^(address|port|resolution) ' "$CONF" | sed 's/^/  /'
+grep -E '^(address|port|resolution|video_codec) ' "$CONF" | sed 's/^/  /'
 
 say "systemd"
 install -m 644 "$SRC/player/inhousechannel-player.service" /etc/systemd/system/inhousechannel-player.service
