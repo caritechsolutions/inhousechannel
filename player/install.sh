@@ -69,7 +69,7 @@ else
     read -rp "Player key (blank for now is fine): " IHC_PLAYER_KEY < /dev/tty; export IHC_PLAYER_KEY
     read -rp "Multicast address [239.1.1.10]: " a < /dev/tty; export IHC_MCAST="${a:-239.1.1.10}"
     read -rp "UDP port [1234]: " p < /dev/tty; export IHC_PORT="${p:-1234}"
-    read -rp "Resolution [1920x1080]: " r < /dev/tty; export IHC_RESOLUTION="${r:-1920x1080}"
+    read -rp "Resolution [1280x720]: " r < /dev/tty; export IHC_RESOLUTION="${r:-1280x720}"
   else
     echo "no terminal / options given by environment — using defaults; edit $CONF afterwards"
   fi

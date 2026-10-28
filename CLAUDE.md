@@ -48,9 +48,11 @@ Measured, with rist running (2 cores = 200 %):
 | **Realtime 720p: x11grab + mpeg2video + TS → UDP, Chrome slate with 30 fps ticker, rist running** | **ffmpeg 34–42 %, Chrome ~15 %, Xvfb 3–6 %; box 34–51 % idle** |
 | **Realtime 1080p, same test, 12 Mb/s video + MP2 audio** | **ffmpeg 73–80 %, Chrome ~12 %, Xvfb ~7 %; box 26–32 % idle** |
 
-So the production design is **CPU-only MPEG-2 video + MP2 audio, 1080p by default** (~95 % of
-the box's 200 %, no driver, no custom ffmpeg); 720p (~60 %) is the config fallback for a busier
-box, and `h264` via libx264 / `aac` stay config options for sites that need them. The earlier
+**Verified on the bench 2026-10-28:** player → UDP multicast → modulator → LG TV, slate on
+screen. At 1080p the ticker judders (ffmpeg at ~110 % on the bench box); at 720p it is smooth.
+So the production design is **CPU-only MPEG-2 video + MP2 audio, 720p by default** (~60 % of
+the box's 200 %, no driver, no custom ffmpeg); 1080p (~95 %) is a config option for a box with
+headroom, and `h264` via libx264 / `aac` stay config options for sites that need them. The earlier
 VAAPI measurements stay here as the record of why the GPU path was dropped.
 
 These numbers drive the architecture below. **Rules:**
@@ -62,8 +64,8 @@ These numbers drive the architecture below. **Rules:**
    measure it on a hotel box before step 5 is designed.
 2. No GPU, VAAPI or custom ffmpeg dependency anywhere in the player; the distro ffmpeg is
    enough (`mpeg2video`, `libx264`, `x11grab`, `overlay`).
-3. Output is 1920×1080 by default; layouts are authored at 1920×1080 and the renderer scales
-   the page (CSS zoom) when a player is set to 1280×720.
+3. Output is 1280×720 by default; layouts are authored at 1920×1080 and the renderer scales
+   the page (CSS zoom) to the player's resolution.
 4. Layout CSS animations run at 30 fps (`steps()` or 30 fps keyframe cadence) — 60 fps
    repaints roughly double Chrome's cost for no benefit on a 30 fps channel. The slate's
    ticker is the reference (`steps(N)` with N = seconds × 30).
@@ -99,13 +101,13 @@ address    = 239.1.1.10                        ; UDP multicast (unicast allowed)
 port       = 1234
 ttl        = 4
 interface  = (optional source interface)
-resolution = 1920x1080                         ; default; 1280x720 for a busier box
+resolution = 1280x720                          ; default; 1920x1080 for a box with headroom
 fps        = 30
 video_codec = mpeg2                            ; or h264 (libx264)
-video_bitrate_kbps = 12000                     ; MPEG-2 CBR (8000 at 720p)
+video_bitrate_kbps = 8000                      ; MPEG-2 CBR (12000 at 1080p)
 audio_codec = mp2                              ; or aac
 audio_bitrate_kbps = 192
-mux_rate_kbps      = 14000                     ; CBR TS for modulators
+mux_rate_kbps      = 10000                     ; CBR TS for modulators (14000 at 1080p)
 service_name = In-House
 service_id   = 1
 pmt_pid = 4096 ; video_pid = 256 ; audio_pid = 257
@@ -116,7 +118,7 @@ pmt_pid = 4096 ; video_pid = 256 ; audio_pid = 257
 ```
                 ┌───────────────┐   X11 (RGB)   ┌─────────────────────────────┐
   layout HTML → │ Chrome + Xvfb │ ─────────────▶│ ffmpeg (CPU only)            │
-  (local files) │ 1920×1080     │               │ x11grab → yuv420p            │
+  (local files) │ 1280×720      │               │ x11grab → yuv420p            │
                 └───────────────┘               │ clip.mp4 → decode ────┐      │
                                                 │ overlay ◀─────────────┘      │ ─▶ UDP TS
                 ┌───────────────┐               │ audio: silent / music / clip │
@@ -193,22 +195,31 @@ scrolling text / RSS, 30 fps stepped), `clock`, `date`, `weather`, `qr` (new), `
 The **player's renderer page** is `zone-draw.js` running in Chrome with `env` pointed at the
 local cache — the same code the editor preview runs.
 
-Runs as a systemd service on its own Ubuntu VM, plain HTTP on an internal port, TLS and
-hostnames by Nginx Proxy Manager. Multi-tenant: one **site** per hotel; a site is reached at
-its own hostname (e.g. `nothingbox.signage.caritech.net`); superadmin manages sites.
+Runs as a systemd service on its own Ubuntu 24.04 VM, plain HTTP on 127.0.0.1:3100, TLS by
+Nginx Proxy Manager. **One hostname for everything: `signage.caritech.net`** (decided
+2026-10-28 — not one hostname per hotel). Access is by assignment, not by hostname: Richard is
+the superadmin; every other user sees only the **sites** (hotels) they are a member of, and
+within them only the players (screens), layouts and media of those sites.
 
 ### 3.1 Entities
 
-- **Site** (tenant): name, hostname, logo, timezone, users.
-- **User**: email, password (argon2), role: `superadmin` | `site-admin` | `editor`.
+- **Site** (hotel): name, slug, logo, timezone. Every player, layout and media item belongs
+  to exactly one site.
+- **User**: email, password (bcryptjs like codenameduck), `is_superadmin`; **memberships**
+  = (user, site, role `admin` | `editor`). A superadmin sees everything and manages sites,
+  users and memberships; a site admin manages users within the site; an editor edits layouts,
+  media and schedules of the site. A user with no membership sees an empty dashboard.
 - **Media**: images (png/jpg/svg/webp), videos (any input → normalised, §3.4), audio
   (mp3/aac → normalised AAC), fonts. Stored under `/var/lib/inhousechannel/media/<site>/`.
 - **Layout**: codenameduck schema-2 JSON (see above) restricted to the signage zone types;
   canvas 1920×1080 (720p scales from the same JSON); pages carry `duration_s`.
 - **Schedule**: per player — default layout plus dated/time-of-day/day-of-week overrides,
   priority ordered.
-- **Player**: belongs to a site; name, key, output settings mirror (read-only display
-  of what the box reports), last heartbeat, thumbnail, version, health.
+- **Player**: belongs to a site; **name is set in the CMS** (e.g. "test modulator"); the CMS
+  generates the key and shows a pairing command. On the box:
+  `inhousechannel-player pair https://signage.caritech.net <key>` writes `[server]` into the
+  conf and restarts the service. Also: output settings mirror (read-only, as the box reports
+  them), last heartbeat, thumbnail, version, health.
 
 ### 3.2 Layout editor
 
@@ -238,10 +249,14 @@ in layouts until normalised.
 
 ### 3.5 `server/install.sh`
 
-Idempotent, Ubuntu 22.04/24.04: Node 20 (NodeSource), ffmpeg (distro is fine on the
-server), creates `inhousechannel` system user, `/opt/inhousechannel/server`,
-`/var/lib/inhousechannel`, systemd unit, first-run creates the superadmin from env or
-prompt, prints the internal port to proxy.
+Idempotent, Ubuntu 24.04, `curl … | sudo bash` (prompts read `/dev/tty`): Node 20
+(NodeSource keyring + apt source, as codenameduck), ffmpeg (distro), clones the repo to
+`/opt/inhousechannel/src`, `npm ci` + build of `server/` and `admin/`, creates the
+`inhousechannel` system user, data in `/var/lib/inhousechannel/server` (SQLite DB, media,
+thumbnails), systemd unit `inhousechannel-server` on 127.0.0.1:3100, first run seeds the
+superadmin (`IHC_ADMIN_EMAIL` / `IHC_ADMIN_PASSWORD`, else prompts), prints the NPM proxy
+settings to use (host 127.0.0.1:3100, websockets on, no forced HTTPS redirect issues — the
+player talks HTTPS through NPM).
 
 ---
 
@@ -262,8 +277,12 @@ docs/     architecture notes; keep §1 numbers here when they are re-measured
 1. Player skeleton: config, Xvfb + Chrome + ffmpeg supervision, static test layout,
    UDP TS out. Verify on the hotel box against the §1 budget before anything else.
 2. Player: local renderer HTTP server, sync, schedule evaluation, heartbeat.
-3. Server: auth, sites, media upload + normalisation, player registration, manifest API.
-4. Admin UI: editor copied from codenameduck, media library, sites, players, schedules.
+3. Server: auth + memberships, sites, players + pairing, media upload + normalisation,
+   layouts, schedules, player API (manifest / media / renderer / heartbeat), install.sh.
+4. Admin UI: login, dashboard (players with thumbnails), sites/users (superadmin), players,
+   media library, layouts with the canvas editor copied from codenameduck, schedules.
+   Steps 3 and 4 ship together: the first install must let Richard create "test modulator",
+   pair the bench box and publish a layout to it.
 5. Video regions (software `overlay`) — measure the decode+overlay cost on a hotel box first.
 6. Admin dashboard: player health, thumbnails, schedules.
 

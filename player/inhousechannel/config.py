@@ -22,13 +22,13 @@ class OutputConf:
     port: int = 1234
     ttl: int = 4
     interface: str = ""            # optional source IP for multicast (localaddr=)
-    resolution: str = "1920x1080"  # CPU-only MPEG-2: 1080p ≈ 75 % of one core, 720p ≈ 40 % (Celeron 3965U)
+    resolution: str = "1280x720"   # CPU-only MPEG-2: 720p ≈ 40 % of one core, 1080p ≈ 75 % (Celeron 3965U)
     fps: int = 30
     video_codec: str = "mpeg2"     # mpeg2 (default, universal STB/modulator support) | h264 (libx264, more CPU)
-    video_bitrate_kbps: int = 12000
+    video_bitrate_kbps: int = 8000
     audio_codec: str = "mp2"       # mp2 (default, native MPEG-TS audio) | aac
     audio_bitrate_kbps: int = 192
-    mux_rate_kbps: int = 14000
+    mux_rate_kbps: int = 10000
     service_name: str = "In-House"
     service_provider: str = "Caritech"
     service_id: int = 1
