@@ -1,0 +1,11 @@
+/* Bundled open-licence fonts (SIL OFL 1.1, see LICENSES.txt), Latin subsets as WOFF2.
+   Shipped in the renderer bundle so the player never needs the internet. The list of
+   families is ../fonts.json (the admin font picker reads it). */
+@font-face{font-family:"Inter";src:url("./inter.woff2") format("woff2");font-weight:100 900;font-display:swap}
+@font-face{font-family:"Roboto";src:url("./roboto.woff2") format("woff2");font-weight:100 900;font-display:swap}
+@font-face{font-family:"Open Sans";src:url("./opensans.woff2") format("woff2");font-weight:300 800;font-display:swap}
+@font-face{font-family:"Lato";src:url("./lato-regular.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Lato";src:url("./lato-bold.woff2") format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Montserrat";src:url("./montserrat.woff2") format("woff2");font-weight:100 900;font-display:swap}
+@font-face{font-family:"Oswald";src:url("./oswald.woff2") format("woff2");font-weight:200 700;font-display:swap}
+@font-face{font-family:"Playfair Display";src:url("./playfairdisplay.woff2") format("woff2");font-weight:400 900;font-display:swap}

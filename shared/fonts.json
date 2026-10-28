@@ -1,0 +1,64 @@
+[
+  {
+    "family": "",
+    "label": "Default (Helvetica / Arial)",
+    "kind": "sans"
+  },
+  {
+    "family": "Inter",
+    "label": "Inter",
+    "kind": "sans",
+    "file": "inter.woff2",
+    "weights": "100 900"
+  },
+  {
+    "family": "Roboto",
+    "label": "Roboto",
+    "kind": "sans",
+    "file": "roboto.woff2",
+    "weights": "100 900"
+  },
+  {
+    "family": "Open Sans",
+    "label": "Open Sans",
+    "kind": "sans",
+    "file": "opensans.woff2",
+    "weights": "300 800"
+  },
+  {
+    "family": "Lato",
+    "label": "Lato",
+    "kind": "sans",
+    "files": [
+      {
+        "file": "lato-regular.woff2",
+        "weight": 400
+      },
+      {
+        "file": "lato-bold.woff2",
+        "weight": 700
+      }
+    ]
+  },
+  {
+    "family": "Montserrat",
+    "label": "Montserrat",
+    "kind": "sans",
+    "file": "montserrat.woff2",
+    "weights": "100 900"
+  },
+  {
+    "family": "Oswald",
+    "label": "Oswald (condensed)",
+    "kind": "sans",
+    "file": "oswald.woff2",
+    "weights": "200 700"
+  },
+  {
+    "family": "Playfair Display",
+    "label": "Playfair Display (serif)",
+    "kind": "serif",
+    "file": "playfairdisplay.woff2",
+    "weights": "400 900"
+  }
+]

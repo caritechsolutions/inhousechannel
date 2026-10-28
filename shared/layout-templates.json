@@ -1,0 +1,336 @@
+[
+  {
+    "id": "lobby",
+    "name": "Lobby",
+    "description": "Logo, clock and date, hero image, news ticker along the bottom.",
+    "json": {
+      "schema": 2,
+      "canvas": {
+        "w": 1920,
+        "h": 1080,
+        "background": "#0b1a2a",
+        "backgroundImage": null
+      },
+      "zones": [
+        {
+          "id": "logo",
+          "type": "image",
+          "x": 80,
+          "y": 50,
+          "w": 520,
+          "h": 140,
+          "src": "{{logo}}",
+          "fit": "contain"
+        },
+        {
+          "id": "clock",
+          "type": "clock",
+          "x": 1340,
+          "y": 50,
+          "w": 500,
+          "h": 90,
+          "format": "HH:mm",
+          "style": {
+            "fontSize": 80,
+            "fontWeight": "bold",
+            "color": "#ffffff",
+            "align": "right",
+            "fontFamily": "Inter"
+          }
+        },
+        {
+          "id": "date",
+          "type": "date",
+          "x": 1140,
+          "y": 145,
+          "w": 700,
+          "h": 50,
+          "format": "dddd D MMMM YYYY",
+          "style": {
+            "fontSize": 32,
+            "color": "#8fb3c9",
+            "align": "right",
+            "fontFamily": "Inter"
+          }
+        },
+        {
+          "id": "hero",
+          "type": "image",
+          "x": 80,
+          "y": 230,
+          "w": 1760,
+          "h": 690,
+          "src": "",
+          "fit": "cover",
+          "style": {
+            "borderRadius": 24,
+            "background": "rgba(255,255,255,0.06)"
+          }
+        },
+        {
+          "id": "welcome",
+          "type": "text",
+          "x": 700,
+          "y": 60,
+          "w": 600,
+          "h": 120,
+          "text": "Welcome to {{site}}",
+          "style": {
+            "fontSize": 44,
+            "color": "#ffffff",
+            "align": "center",
+            "valign": "middle",
+            "fontFamily": "Inter"
+          }
+        },
+        {
+          "id": "tickerbg",
+          "type": "shape",
+          "x": 0,
+          "y": 960,
+          "w": 1920,
+          "h": 120,
+          "shape": "rect",
+          "fill": "rgba(0,0,0,0.45)"
+        },
+        {
+          "id": "ticker",
+          "type": "ticker",
+          "x": 0,
+          "y": 960,
+          "w": 1920,
+          "h": 120,
+          "items": [
+            "Breakfast is served 7:00 – 10:30 in the restaurant",
+            "Pool and gym open 6:00 – 22:00",
+            "Ask reception about island tours"
+          ],
+          "speed": 140,
+          "style": {
+            "fontSize": 48,
+            "color": "#ffd166",
+            "padding": 0,
+            "fontFamily": "Inter"
+          }
+        }
+      ],
+      "pages": [
+        {
+          "id": "main",
+          "name": "Main",
+          "zones": [
+            "logo",
+            "welcome",
+            "clock",
+            "date",
+            "hero",
+            "tickerbg",
+            "ticker"
+          ],
+          "duration_s": 15
+        }
+      ]
+    }
+  },
+  {
+    "id": "menu",
+    "name": "Menu board",
+    "description": "Title and three text columns for a menu or daily programme; a second page for specials.",
+    "json": {
+      "schema": 2,
+      "canvas": {
+        "w": 1920,
+        "h": 1080,
+        "background": "#14110f",
+        "backgroundImage": null
+      },
+      "zones": [
+        {
+          "id": "title",
+          "type": "text",
+          "x": 80,
+          "y": 50,
+          "w": 1760,
+          "h": 110,
+          "text": "Today’s Menu",
+          "style": {
+            "fontSize": 84,
+            "fontWeight": "bold",
+            "color": "#f6e7c1",
+            "align": "center",
+            "fontFamily": "Playfair Display"
+          }
+        },
+        {
+          "id": "rule",
+          "type": "shape",
+          "x": 560,
+          "y": 175,
+          "w": 800,
+          "h": 4,
+          "shape": "rect",
+          "fill": "#c9a227"
+        },
+        {
+          "id": "col1",
+          "type": "text",
+          "x": 80,
+          "y": 220,
+          "w": 560,
+          "h": 700,
+          "text": "STARTERS\n\nFish cakes  ·  18\nPumpkin soup  ·  14\nGarden salad  ·  12",
+          "style": {
+            "fontSize": 38,
+            "color": "#ffffff",
+            "lineHeight": 1.5,
+            "fontFamily": "Lato"
+          }
+        },
+        {
+          "id": "col2",
+          "type": "text",
+          "x": 680,
+          "y": 220,
+          "w": 560,
+          "h": 700,
+          "text": "MAINS\n\nGrilled mahi-mahi  ·  48\nPepperpot  ·  42\nVegetable curry  ·  36",
+          "style": {
+            "fontSize": 38,
+            "color": "#ffffff",
+            "lineHeight": 1.5,
+            "fontFamily": "Lato"
+          }
+        },
+        {
+          "id": "col3",
+          "type": "text",
+          "x": 1280,
+          "y": 220,
+          "w": 560,
+          "h": 700,
+          "text": "DESSERTS\n\nCoconut flan  ·  16\nRum cake  ·  16\nSorbet  ·  12",
+          "style": {
+            "fontSize": 38,
+            "color": "#ffffff",
+            "lineHeight": 1.5,
+            "fontFamily": "Lato"
+          }
+        },
+        {
+          "id": "footer",
+          "type": "text",
+          "x": 80,
+          "y": 960,
+          "w": 1760,
+          "h": 60,
+          "text": "Prices in BBD  ·  Please tell us about allergies",
+          "style": {
+            "fontSize": 28,
+            "color": "#c9a227",
+            "align": "center",
+            "fontFamily": "Lato"
+          }
+        },
+        {
+          "id": "special",
+          "type": "text",
+          "x": 160,
+          "y": 300,
+          "w": 1600,
+          "h": 500,
+          "text": "Chef’s special tonight\n\nCatch of the day with breadfruit and cou-cou",
+          "style": {
+            "fontSize": 64,
+            "color": "#ffffff",
+            "align": "center",
+            "valign": "middle",
+            "lineHeight": 1.4,
+            "fontFamily": "Playfair Display"
+          }
+        }
+      ],
+      "pages": [
+        {
+          "id": "menu",
+          "name": "Menu",
+          "zones": [
+            "title",
+            "rule",
+            "col1",
+            "col2",
+            "col3",
+            "footer"
+          ],
+          "duration_s": 20
+        },
+        {
+          "id": "specials",
+          "name": "Specials",
+          "zones": [
+            "title",
+            "rule",
+            "special",
+            "footer"
+          ],
+          "duration_s": 10
+        }
+      ]
+    }
+  },
+  {
+    "id": "slideshow",
+    "name": "Full-screen slideshow",
+    "description": "Edge-to-edge image slideshow with a small clock overlay.",
+    "json": {
+      "schema": 2,
+      "canvas": {
+        "w": 1920,
+        "h": 1080,
+        "background": "#000000",
+        "backgroundImage": null
+      },
+      "zones": [
+        {
+          "id": "slides",
+          "type": "slideshow",
+          "x": 0,
+          "y": 0,
+          "w": 1920,
+          "h": 1080,
+          "images": [],
+          "interval_s": 8,
+          "fade": true,
+          "fit": "cover"
+        },
+        {
+          "id": "clock",
+          "type": "clock",
+          "x": 1600,
+          "y": 980,
+          "w": 280,
+          "h": 70,
+          "format": "HH:mm",
+          "style": {
+            "fontSize": 52,
+            "fontWeight": "bold",
+            "color": "#ffffff",
+            "align": "right",
+            "shadow": "strong",
+            "fontFamily": "Inter"
+          }
+        }
+      ],
+      "pages": [
+        {
+          "id": "main",
+          "name": "Main",
+          "zones": [
+            "slides",
+            "clock"
+          ],
+          "duration_s": 15
+        }
+      ]
+    }
+  }
+]

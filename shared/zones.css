@@ -1,0 +1,24 @@
+/* Zone styles shared by the player's renderer page and the admin's in-editor preview.
+   Canvas pixels (1920×1080); the stage is scaled (CSS zoom) to the output resolution.
+   Animations are stepped at 30 fps (CLAUDE.md §1 rule 4). */
+.zone{position:absolute;overflow:hidden;box-sizing:border-box;white-space:pre-wrap;line-height:1.15}
+.zone.zone-flex{display:flex;flex-direction:column}
+.zone img{width:100%;height:100%;object-fit:contain;display:block}
+.zone-video{background:transparent}
+.zone-video-placeholder{position:absolute;left:0;top:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;background:repeating-linear-gradient(45deg,#182a3a 0 24px,#12202d 24px 48px);color:rgba(255,255,255,.55);font-size:56px;letter-spacing:4px;font-family:Helvetica,Arial,sans-serif}
+.zone-placeholder{position:absolute;left:0;top:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.45);border:2px dashed rgba(255,255,255,.25);font-size:32px;font-family:Helvetica,Arial,sans-serif;text-align:center}
+/* slideshow: stacked images, incoming one fades in over 0.5 s in 15 steps */
+.zone-slideshow .slide{position:absolute;left:0;top:0;width:100%;height:100%;opacity:1}
+.zone-slideshow .slide.fade{opacity:0;transition:opacity .5s steps(15)}
+.zone-slideshow .slide.fade.shown{opacity:1}
+/* ticker: one line, moved by a stepped keyframe animation set per zone in zone-draw.js */
+.zone-ticker{white-space:nowrap;display:flex;align-items:center}
+.zone-ticker .ticker-text{display:inline-block;white-space:nowrap;will-change:transform}
+.zone-iframe{width:100%;height:100%;border:0;display:block}
+.zone-qr{display:flex;flex-direction:column;align-items:center;justify-content:center}
+.zone-qr svg{width:100%;height:100%;flex:1;min-height:0}
+.zone-qr .qr-caption{flex:none;font-size:.6em;padding-top:.3em;white-space:nowrap}
+.wx{display:flex;align-items:center;gap:.4em;height:100%}
+.wx-icon{font-size:1.4em}
+.wx-temp{font-weight:bold}
+.wx-text{opacity:.85}

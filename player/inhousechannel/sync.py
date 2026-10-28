@@ -4,9 +4,10 @@ cache; evaluates the schedule locally; sends heartbeats and thumbnails. Stdlib o
 Cache layout (/var/lib/inhousechannel/cache):
   manifest.json            last manifest (with its ETag in manifest.etag)
   renderer/                unpacked renderer bundle (render.html, zone-draw.js, zones.css, fonts/)
-  media/<id>.<ext>         media files, verified by sha256
-  layouts/<id>/            one directory per layout: index.html (copy of render.html),
-                           layout.json, symlinks to renderer assets and media
+  media/<id>               media files (no extension — the renderer maps media:<id> to ./media/<id>),
+                           verified by sha256
+  layouts/<id>/            one directory per layout: index.html (= render.html), layout.json,
+                           ctx.json, a copy of the renderer assets and hard links to its media
 The render server points Chrome at layouts/<id>/ for the layout currently scheduled.
 """
 import datetime as dt
@@ -110,9 +111,7 @@ class Cache:
 
     # -- media ------------------------------------------------------------------------
     def media_path(self, item: dict) -> str:
-        ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/svg+xml": "svg",
-               "image/gif": "gif", "video/mp4": "mp4", "audio/mp4": "m4a", "font/woff2": "woff2"}.get(item.get("mime", ""), "bin")
-        return os.path.join(self.root, "media", "%s.%s" % (item["id"], ext))
+        return os.path.join(self.root, "media", str(item["id"]))
 
     def media_ok(self, item: dict) -> bool:
         p = self.media_path(item)
@@ -140,7 +139,7 @@ class Cache:
         return os.path.exists(os.path.join(self.root, "renderer", "render.html"))
 
     # -- layouts ----------------------------------------------------------------------
-    def build_layout_dir(self, layout: dict, media_by_id: Dict[str, dict]) -> str:
+    def build_layout_dir(self, layout: dict, media_by_id: Dict[str, dict], ctx: Optional[dict] = None) -> str:
         """Materialise layouts/<id>/ with the renderer, layout.json and media/<id>.<ext> links so
         the page is fully local. Media URLs in the layout JSON point at media/<id>.<ext>."""
         d = os.path.join(self.root, "layouts", str(layout["id"]))
@@ -156,13 +155,15 @@ class Cache:
             else:
                 shutil.copy2(src, dst)
         doc = json.loads(layout["json"]) if isinstance(layout["json"], str) else layout["json"]
-        used = rewrite_media_refs(doc, media_by_id, self)
+        used = media_refs(doc, media_by_id) + media_refs(ctx or {}, media_by_id)
         for item in used:
             p = self.media_path(item)
             if os.path.exists(p):
                 os.link(p, os.path.join(tmp, "media", os.path.basename(p)))
         with open(os.path.join(tmp, "layout.json"), "w") as f:
             json.dump(doc, f)
+        with open(os.path.join(tmp, "ctx.json"), "w") as f:
+            json.dump(ctx or {}, f)
         shutil.rmtree(d, ignore_errors=True)
         os.rename(tmp, d)
         return d
@@ -175,7 +176,7 @@ class Cache:
         cutoff = time.time() - max_age_days * 86400
         for name in os.listdir(os.path.join(self.root, "media")):
             p = os.path.join(self.root, "media", name)
-            if name.split(".")[0] not in keep_media and os.path.getmtime(p) < cutoff:
+            if name not in keep_media and os.path.getmtime(p) < cutoff:
                 os.unlink(p); n += 1
         for name in os.listdir(os.path.join(self.root, "layouts")):
             if name not in keep_layouts:
@@ -193,42 +194,29 @@ class Cache:
         return total
 
 
-def rewrite_media_refs(doc: dict, media_by_id: Dict[str, dict], cache: Cache) -> list:
-    """Walk the layout JSON; every string of the form media:<id> or /api/player/media/<id>
-    becomes media/<id>.<ext>. Returns the media items referenced."""
+def media_refs(doc, media_by_id: Dict[str, dict]) -> list:
+    """Collect the media items referenced as media:<id> anywhere in a JSON document."""
     used = {}
-
-    def fix(s: str) -> str:
-        mid = None
-        if s.startswith("media:"):
-            mid = s[6:]
-        elif "/api/player/media/" in s:
-            mid = s.split("/api/player/media/")[1].split("?")[0].split("/")[0]
-        elif "/api/admin/media/" in s:           # editor-saved URLs: .../media/<id>/file
-            mid = s.split("/api/admin/media/")[1].split("/")[0]
-        if mid and mid in media_by_id:
-            used[mid] = media_by_id[mid]
-            return "media/" + os.path.basename(cache.media_path(media_by_id[mid]))
-        return s
 
     def walk(x):
         if isinstance(x, dict):
-            return {k: walk(v) for k, v in x.items()}
-        if isinstance(x, list):
-            return [walk(v) for v in x]
-        if isinstance(x, str):
-            return fix(x)
-        return x
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+        elif isinstance(x, str) and x.startswith("media:") and x[6:] in media_by_id:
+            used[x[6:]] = media_by_id[x[6:]]
 
-    doc.update(walk(doc))
+    walk(doc)
     return list(used.values())
 
 
 # -- schedule ---------------------------------------------------------------------------
 def resolve_layout_id(manifest: dict, now: Optional[dt.datetime] = None) -> Optional[int]:
     """Same rule as the server: highest priority enabled schedule whose date range, weekday
-    (bit0 = Monday) and time window (overnight allowed) contain `now` in the site timezone;
-    else the player's default layout."""
+    (bit0 = Sunday, as in JS getDay()) and time window (overnight allowed — the window belongs
+    to the weekday it started on) contain `now` in the site timezone; else the default layout."""
     tzname = (manifest.get("player") or {}).get("site_tz") or "UTC"
     try:
         tz = zoneinfo.ZoneInfo(tzname)
@@ -237,6 +225,7 @@ def resolve_layout_id(manifest: dict, now: Optional[dt.datetime] = None) -> Opti
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(tz)
     today = now.date().isoformat()
     hhmm = now.strftime("%H:%M")
+    dow = (now.weekday() + 1) % 7            # Sunday = 0
     best = None
     for s in manifest.get("schedule") or []:
         if not s.get("enabled", True):
@@ -248,18 +237,18 @@ def resolve_layout_id(manifest: dict, now: Optional[dt.datetime] = None) -> Opti
         start, end = s.get("start_time") or "00:00", s.get("end_time") or "24:00"
         mask = s.get("days_mask", 127)
         if start <= end:
-            if not (start <= hhmm < end) or not (mask >> now.weekday()) & 1:
+            if not (start <= hhmm < end) or not (mask >> dow) & 1:
                 continue
         else:  # overnight window: today's evening part or yesterday's morning part
             if hhmm >= start:
-                if not (mask >> now.weekday()) & 1:
+                if not (mask >> dow) & 1:
                     continue
             elif hhmm < end:
-                if not (mask >> ((now.weekday() - 1) % 7)) & 1:
+                if not (mask >> ((dow - 1) % 7)) & 1:
                     continue
             else:
                 continue
-        if best is None or s.get("priority", 0) > best.get("priority", 0):
+        if best is None or (s.get("priority", 0), -s.get("id", 0)) > (best.get("priority", 0), -best.get("id", 0)):
             best = s
     if best:
         return best["layout_id"]
@@ -334,7 +323,7 @@ class Syncer:
         self.ready_layouts = set()
         for layout in m.get("layouts", []):
             try:
-                self.cache.build_layout_dir(layout, media_by_id)
+                self.cache.build_layout_dir(layout, media_by_id, m.get("ctx"))
                 self.ready_layouts.add(str(layout["id"]))
                 changed = True
             except Exception as e:

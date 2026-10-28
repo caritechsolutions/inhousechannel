@@ -103,7 +103,8 @@ class Supervisor:
         self.cache = Cache()
         self.syncer = Syncer(conf, self.cache)
         self.render = RenderServer(conf.render.render_port, self.status,
-                                   layouts_dir=os.path.join(self.cache.root, "layouts"))
+                                   layouts_dir=os.path.join(self.cache.root, "layouts"),
+                                   resolution=conf.output.resolution)
         self.xvfb = Proc("Xvfb", lambda: xvfb_command(conf))
         self.chrome = Proc("chrome", lambda: chrome_command(conf, self.render.url),
                            env={"DISPLAY": conf.render.display, "HOME": "/var/lib/inhousechannel"})

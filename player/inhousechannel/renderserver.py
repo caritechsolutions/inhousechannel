@@ -27,15 +27,17 @@ iframe{position:absolute;inset:0;width:100vw;height:100vh;border:0}</style></hea
 <script>
 var cur="/slate/";
 function poll(){fetch("/current.json",{cache:"no-store"}).then(function(r){return r.json()}).then(function(c){
-  if(c.url&&c.url!==cur){cur=c.url;document.getElementById("f").src=c.url+"?t="+Date.now();}
+  if(c.url&&c.url!==cur){cur=c.url;document.getElementById("f").src=c.url+(c.url.indexOf("?")<0?"?":"&")+"t="+Date.now();}
 }).catch(function(){}).then(function(){setTimeout(poll,2000)});}
 poll();
 </script></body></html>"""
 
 
 class RenderServer:
-    def __init__(self, port: int, status_fn: Callable[[], Dict], layouts_dir: Optional[str] = None):
+    def __init__(self, port: int, status_fn: Callable[[], Dict], layouts_dir: Optional[str] = None,
+                 resolution: str = "1280x720"):
         self.port = port
+        self.resolution = resolution
         self.status_fn = status_fn
         self.layouts_dir = layouts_dir
         self.current_url = "/slate/"
@@ -45,7 +47,7 @@ class RenderServer:
 
     def set_current(self, layout_id, layout_dir: Optional[str]) -> bool:
         """Point the shell at a layout dir (or the slate when None). Returns True on change."""
-        url = "/layouts/%s/" % layout_id if layout_dir else "/slate/"
+        url = "/layouts/%s/index.html?res=%s" % (layout_id, self.resolution) if layout_dir else "/slate/"
         changed = url != self.current_url
         self.current_url, self.current_layout_id = url, (layout_id if layout_dir else None)
         return changed

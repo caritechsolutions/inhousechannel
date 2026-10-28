@@ -1,0 +1,28 @@
+[Unit]
+Description=inhousechannel content server (signage CMS + player API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=inhousechannel
+Group=inhousechannel
+Environment=NODE_ENV=production
+Environment=PORT=3100
+Environment=HOST=127.0.0.1
+Environment=IHC_DATA=/var/lib/inhousechannel/server
+EnvironmentFile=-/etc/inhousechannel/server.env
+WorkingDirectory=/opt/inhousechannel/src/server
+ExecStart=/usr/bin/node /opt/inhousechannel/src/server/src/index.js
+Restart=always
+RestartSec=3
+# ffmpeg normalisation runs in-process; give it room but keep the box responsive
+Nice=5
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/inhousechannel/server
+
+[Install]
+WantedBy=multi-user.target
