@@ -108,7 +108,8 @@ class Supervisor:
         self.xvfb = Proc("Xvfb", lambda: xvfb_command(conf))
         self.chrome = Proc("chrome", lambda: chrome_command(conf, self.render.url),
                            env={"DISPLAY": conf.render.display, "HOME": "/var/lib/inhousechannel"})
-        self.ffmpeg = Proc("ffmpeg", lambda: ffmpeg_command(conf), env={"DISPLAY": conf.render.display})
+        self.video = None                     # current overlay spec (None = graphics only)
+        self.ffmpeg = Proc("ffmpeg", lambda: ffmpeg_command(conf, video=self.video), env={"DISPLAY": conf.render.display})
         self.events: List[str] = []
 
     # -- status -------------------------------------------------------------------------
@@ -130,6 +131,7 @@ class Supervisor:
             "paired": self.syncer.server.configured,
             "layout_id": self.render.current_layout_id,
             "render_url": self.render.current_url,
+            "video": {k: v for k, v in (self.video or {}).items() if k != "playlist"} or None,
             "last_sync_at": self.syncer.last_sync_at,
             "sync_error": self.syncer.last_error,
             "cache_bytes": self.cache.size_bytes(),
@@ -216,6 +218,14 @@ class Supervisor:
         d = self.syncer.current_layout_dir()
         if self.render.set_current(lid, d):
             self.note("now showing %s" % ("layout %s" % lid if d else "slate"))
+        video = self.syncer.current_video(self.conf.output.resolution) if d else None
+        key = lambda v: None if not v else (v["x"], v["y"], v["w"], v["h"], v["loop"], v["mute"], tuple(v["files"]))
+        if key(video) != key(self.video):
+            self.video = video
+            if self.ffmpeg.alive():          # geometry/playlist change: the one case that restarts the encoder
+                self.ffmpeg.stop()
+                self.ffmpeg.start("video region changed: %s" % ("%dx%d@%d,%d, %d clip(s)" % (
+                    video["w"], video["h"], video["x"], video["y"], len(video["files"])) if video else "removed"))
 
     def _sync_loop(self) -> None:
         last_thumb = 0.0

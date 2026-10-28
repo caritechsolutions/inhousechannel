@@ -3,13 +3,16 @@
 CPU only, no GPU dependency. Measured 2026-10-28 on a Celeron 3965U hotel box while it kept
 serving its rist receivers: 1080p30 MPEG-2 grab+encode+mux ≈ 73–80 % of one core, 720p ≈ 34–42 %.
 """
-from typing import List
+from typing import List, Optional
 
 from .config import PlayerConf
 
 
 def ffmpeg_command(conf: PlayerConf, destination: str = None, duration_s: int = None,
-                   benchmark: bool = False) -> List[str]:
+                   benchmark: bool = False, video: Optional[dict] = None) -> List[str]:
+    """`video` = {"playlist": "/path/list.txt", "x","y","w","h" (output pixels), "loop": bool,
+    "mute": bool} composites a clip playlist over the screen grab at that rectangle (the page
+    draws a transparent hole there). None = graphics only."""
     o, r = conf.output, conf.render
     cmd = [
         conf.ffmpeg, "-y", "-hide_banner", "-nostats", "-loglevel", "warning",
@@ -19,9 +22,26 @@ def ffmpeg_command(conf: PlayerConf, destination: str = None, duration_s: int = 
         # input 1: silent audio — an audio PID must always exist for modulators/STBs
         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
     ]
+    if video:
+        # input 2: the clip playlist (concat demuxer), read at native rate so it paces with the grab;
+        # -stream_loop -1 loops the whole list. Clips are server-normalised 720p H.264 + AAC.
+        cmd += ["-re", "-thread_queue_size", "512"]
+        if video.get("loop", True):
+            cmd += ["-stream_loop", "-1"]
+        cmd += ["-f", "concat", "-safe", "0", "-i", video["playlist"]]
     if duration_s:
         cmd += ["-t", str(duration_s)]
-    cmd += ["-map", "0:v", "-map", "1:a", "-pix_fmt", "yuv420p", "-threads", str(r.threads)]
+    if video:
+        w, h = max(16, int(video["w"]) // 2 * 2), max(16, int(video["h"]) // 2 * 2)
+        graph = ("[0:v]setpts=PTS-STARTPTS[bg];"
+                 "[2:v]scale=%d:%d:flags=fast_bilinear,setpts=PTS-STARTPTS[fg];"
+                 "[bg][fg]overlay=%d:%d:eof_action=%s:shortest=0[v]"
+                 % (w, h, int(video["x"]), int(video["y"]), "repeat" if video.get("loop", True) else "pass"))
+        audio_map = "1:a" if video.get("mute") else "2:a?"
+        cmd += ["-filter_complex", graph, "-map", "[v]", "-map", audio_map]
+    else:
+        cmd += ["-map", "0:v", "-map", "1:a"]
+    cmd += ["-pix_fmt", "yuv420p", "-threads", str(r.threads)]
     cmd += video_codec_args(conf)
     cmd += [
         "-c:a", o.audio_codec, "-b:a", "%dk" % o.audio_bitrate_kbps, "-ar", "48000", "-ac", "2",

@@ -168,6 +168,41 @@ class Cache:
         os.rename(tmp, d)
         return d
 
+    def video_spec(self, layout_id, resolution: str) -> Optional[dict]:
+        """Video zone of a materialised layout as an ffmpeg overlay spec in output pixels,
+        plus a concat playlist file written next to the layout. None when there is no video
+        zone or none of its clips is cached."""
+        d = self.layout_dir(layout_id)
+        try:
+            with open(os.path.join(d, "layout.json")) as f:
+                doc = json.load(f)
+        except Exception:
+            return None
+        zone = next((z for z in doc.get("zones", []) if z.get("type") == "video"), None)
+        if not zone:
+            return None
+        # only when the zone is on the page being shown — single-page layouts for now;
+        # multi-page layouts keep the video on every page it is listed on
+        files = []
+        for item in zone.get("playlist") or []:
+            src = item.get("src") if isinstance(item, dict) else item
+            if isinstance(src, str) and src.startswith("media:"):
+                p = os.path.join(self.root, "media", src[6:])
+                if os.path.exists(p) and os.path.getsize(p) > 0:
+                    files.append(p)
+        if not files:
+            return None
+        playlist = os.path.join(d, "playlist.txt")
+        with open(playlist, "w") as f:
+            for p in files:
+                f.write("file '%s'\n" % p.replace("'", "'\\''"))
+        cw, ch = (doc.get("canvas") or {}).get("w", 1920), (doc.get("canvas") or {}).get("h", 1080)
+        ow, oh = [int(v) for v in resolution.lower().split("x")]
+        sx, sy = ow / cw, oh / ch
+        return {"playlist": playlist, "x": round(zone.get("x", 0) * sx), "y": round(zone.get("y", 0) * sy),
+                "w": round(zone.get("w", 0) * sx), "h": round(zone.get("h", 0) * sy),
+                "loop": zone.get("loop", True), "mute": bool(zone.get("mute", False)), "files": files}
+
     def layout_dir(self, layout_id) -> str:
         return os.path.join(self.root, "layouts", str(layout_id))
 
@@ -344,6 +379,10 @@ class Syncer:
 
     def current_layout_id(self) -> Optional[int]:
         return resolve_layout_id(self.manifest) if self.manifest else None
+
+    def current_video(self, resolution: str) -> Optional[dict]:
+        d = self.current_layout_dir()
+        return self.cache.video_spec(self.current_layout_id(), resolution) if d else None
 
     def heartbeat(self, status: dict) -> None:
         if not self.server.configured:

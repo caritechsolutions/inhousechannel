@@ -343,4 +343,19 @@ Every step ends with the player still producing a continuous TS on the test box.
   `server/install.sh` ran here up to systemd (stubbed).
 - Known gaps: weather route not wired; uploaded fonts not exposed as @font-face; no WebSocket
   push (players poll every 60 s); editor cosmetics (pages row, ticker label overlap);
-  video regions (step 5) not started.
+  video regions: see step 5 below.
+
+### Step 5 — video regions (built 2026-10-28, awaiting the bench)
+
+- `pipeline.ffmpeg_command(conf, video=spec)`: input 2 = concat playlist of cached clips
+  (`-re`, `-stream_loop -1` when looping), `scale` to the zone's output-pixel size,
+  software `overlay` at its position over the screen grab (the page draws a transparent hole);
+  audio = the clip's track unless `mute`, else the silent source. `Cache.video_spec()` derives
+  the spec from the materialised `layout.json` (canvas → output scale) and writes `playlist.txt`;
+  the supervisor restarts ffmpeg only when the spec changes (geometry, loop/mute, clip list),
+  logged as "video region changed: …". Graphics-only layouts are unchanged.
+- Measured in the dev container at 720p: 30 fps held, ffmpeg ≈ 39 % of one core with a 720p
+  H.264 clip composited vs ≈ 31 % without (+8 %). Verified: clip visible in the zone on a frame
+  decoded off the TS, clip audio on the MP2 track, zone removal → one encoder restart, TS continues.
+- Limits for now: one video zone; it shows on every page that lists it (no per-page start/stop);
+  a video that fails to decode is logged and skipped (ffmpeg's concat `-safe 0`).
