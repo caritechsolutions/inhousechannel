@@ -72,7 +72,7 @@ export function upgradeLayout(input) {
   doc.pages = pages;
   doc.zones = zones.map(function (z) {
     var c = clone(z);
-    delete c.hidden; delete c.action; delete c.focusStyle; delete c.items;
+    delete c.hidden; delete c.action; delete c.focusStyle;   // (items stays: ticker lines)
     return c;
   });
   delete doc.screens; delete doc.home; delete doc.keys; delete doc.focus; delete doc.back_on_home;

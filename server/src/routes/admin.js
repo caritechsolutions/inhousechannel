@@ -216,7 +216,9 @@ function createAdminRouter({ db, auth, players, media, publicUrl = null, log = (
     const name = String(b.name || '').trim().slice(0, 80);
     if (!name) return res.status(400).json({ error: 'name required' });
     if (b.resolution !== undefined && !RESOLUTIONS.includes(b.resolution)) return res.status(400).json({ error: `resolution must be one of ${RESOLUTIONS.join(', ')}` });
+    if (b.default_layout_id != null && !qLayout.get(Number(b.default_layout_id), req.site.id)) return res.status(400).json({ error: 'unknown layout' });
     const { id, key } = players.create(req.site.id, { name, resolution: b.resolution });
+    if (b.default_layout_id != null) db.prepare('UPDATE players SET default_layout_id = ? WHERE id = ?').run(Number(b.default_layout_id), id);
     log(`player created: ${name} in ${req.site.slug} by ${req.user.email}`);
     res.status(201).json({ ...playerApi(qPlayer.get(id, req.site.id)), key, pair: pairCommand(baseUrl(req), key) });
   });
