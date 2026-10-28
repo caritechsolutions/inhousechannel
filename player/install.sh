@@ -63,12 +63,15 @@ say "configuration $CONF"
 if [ -f "$CONF" ] && [ -z "${IHC_SERVER_URL:-}" ] && [ -z "${IHC_PLAYER_KEY:-}" ]; then
   echo "kept existing $CONF"
 else
-  if [ -z "${IHC_SERVER_URL:-}" ] && [ -t 0 ]; then
-    read -rp "Content server URL (blank for now is fine): " IHC_SERVER_URL; export IHC_SERVER_URL
-    read -rp "Player key (blank for now is fine): " IHC_PLAYER_KEY; export IHC_PLAYER_KEY
-    read -rp "Multicast address [239.1.1.10]: " a; export IHC_MCAST="${a:-239.1.1.10}"
-    read -rp "UDP port [1234]: " p; export IHC_PORT="${p:-1234}"
-    read -rp "Resolution [1920x1080]: " r; export IHC_RESOLUTION="${r:-1920x1080}"
+  # stdin is the curl pipe, so prompt on the controlling terminal when there is one
+  if [ -z "${IHC_SERVER_URL:-}" ] && [ -z "${IHC_MCAST:-}" ] && [ -e /dev/tty ] && ( : < /dev/tty ) 2>/dev/null; then
+    read -rp "Content server URL (blank for now is fine): " IHC_SERVER_URL < /dev/tty; export IHC_SERVER_URL
+    read -rp "Player key (blank for now is fine): " IHC_PLAYER_KEY < /dev/tty; export IHC_PLAYER_KEY
+    read -rp "Multicast address [239.1.1.10]: " a < /dev/tty; export IHC_MCAST="${a:-239.1.1.10}"
+    read -rp "UDP port [1234]: " p < /dev/tty; export IHC_PORT="${p:-1234}"
+    read -rp "Resolution [1920x1080]: " r < /dev/tty; export IHC_RESOLUTION="${r:-1920x1080}"
+  else
+    echo "no terminal / options given by environment — using defaults; edit $CONF afterwards"
   fi
   "$APP/venv/bin/python" -m inhousechannel init
 fi
@@ -87,6 +90,7 @@ if [ -z "${IHC_NO_START:-}" ]; then
 fi
 
 say "done"
+echo "  options:  $CONF  (then: systemctl restart inhousechannel-player)"
 echo "  status:   inhousechannel-player status"
 echo "  preview:  inhousechannel-player preview /tmp/frame.png"
 echo "  logs:     journalctl -u inhousechannel-player -f"
