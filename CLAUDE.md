@@ -296,4 +296,8 @@ Every step ends with the player still producing a continuous TS on the test box.
   with ffprobe: MPEG-2 Main 30 fps PID 0x100 + audio 0x101, decoded frame shows the slate;
   re-tested at 1080p/MP2 after the defaults changed). Note: capturing with `ffmpeg -c copy` rewrites the SDT, so check
   service names on the live stream, not a re-muxed file.
+- `install.sh` was run in the dev container (Ubuntu 24.04) up to the systemd step with a
+  stubbed Chrome (the container's proxy blocks dl.google.com); the installed tree under
+  `/opt/inhousechannel` then ran the player as the unit does. The ffmpeg capability check
+  must compare the encoder *name column* (`awk '{print $2}'`), not grep the line.
 - Not yet: sync, schedule, heartbeat (step 2); video regions (step 5).

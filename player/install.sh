@@ -27,9 +27,11 @@ apt-get install -y -qq git curl ca-certificates python3 python3-venv xvfb ffmpeg
   fonts-dejavu-core fonts-liberation >/dev/null
 
 say "ffmpeg check"
-ffmpeg -hide_banner -encoders 2>/dev/null | grep -q ' mpeg2video ' || die "ffmpeg has no mpeg2video encoder"
-ffmpeg -hide_banner -devices 2>/dev/null | grep -q x11grab || die "ffmpeg has no x11grab input"
-echo "$(ffmpeg -version | head -1 | cut -d' ' -f1-3): mpeg2video + x11grab OK"
+for enc in mpeg2video mp2; do
+  ffmpeg -hide_banner -encoders 2>/dev/null | awk '{print $2}' | grep -qx "$enc" || die "ffmpeg has no $enc encoder"
+done
+ffmpeg -hide_banner -devices 2>/dev/null | awk '{print $2}' | grep -qx x11grab || die "ffmpeg has no x11grab input"
+echo "$(ffmpeg -version | head -1 | cut -d' ' -f1-3): mpeg2video + mp2 + x11grab OK"
 
 say "Google Chrome"
 if ! command -v google-chrome >/dev/null; then
@@ -80,7 +82,7 @@ if [ -z "${IHC_NO_START:-}" ]; then
   systemctl restart inhousechannel-player
   sleep 6
   systemctl --no-pager --lines=5 status inhousechannel-player || true
-  say "self-test (10 s encode of the live display, with the player running)"
+  say "self-test (a second 10 s encode of the live display while the player keeps streaming — expect roughly double the player's own ffmpeg load during these 10 s)"
   "$APP/venv/bin/python" -m inhousechannel selftest --seconds 10 || echo "self-test FAILED — see output above"
 fi
 
