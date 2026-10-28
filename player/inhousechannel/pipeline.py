@@ -1,7 +1,7 @@
 """Builds the ffmpeg command line: X11 grab → mpeg2video (CPU) → MPEG-TS → UDP.
 
-CPU only, no GPU dependency. Measured 2026-10-28 on a Celeron 3965U hotel box: 720p30 MPEG-2
-grab+encode+mux ≈ 34–42 % of one core while the box kept serving its rist receivers.
+CPU only, no GPU dependency. Measured 2026-10-28 on a Celeron 3965U hotel box while it kept
+serving its rist receivers: 1080p30 MPEG-2 grab+encode+mux ≈ 73–80 % of one core, 720p ≈ 34–42 %.
 """
 from typing import List
 
@@ -24,7 +24,7 @@ def ffmpeg_command(conf: PlayerConf, destination: str = None, duration_s: int = 
     cmd += ["-map", "0:v", "-map", "1:a", "-pix_fmt", "yuv420p", "-threads", str(r.threads)]
     cmd += video_codec_args(conf)
     cmd += [
-        "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+        "-c:a", o.audio_codec, "-b:a", "%dk" % o.audio_bitrate_kbps, "-ar", "48000", "-ac", "2",
         "-f", "mpegts",
         "-mpegts_service_id", str(o.service_id),
         "-mpegts_pmt_start_pid", str(o.pmt_pid),

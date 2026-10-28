@@ -22,11 +22,13 @@ class OutputConf:
     port: int = 1234
     ttl: int = 4
     interface: str = ""            # optional source IP for multicast (localaddr=)
-    resolution: str = "1280x720"   # CPU-only MPEG-2: 720p measured at ~40 % of one core; 1080p ~2.5x that
+    resolution: str = "1920x1080"  # CPU-only MPEG-2: 1080p ≈ 75 % of one core, 720p ≈ 40 % (Celeron 3965U)
     fps: int = 30
     video_codec: str = "mpeg2"     # mpeg2 (default, universal STB/modulator support) | h264 (libx264, more CPU)
-    video_bitrate_kbps: int = 8000
-    mux_rate_kbps: int = 10000
+    video_bitrate_kbps: int = 12000
+    audio_codec: str = "mp2"       # mp2 (default, native MPEG-TS audio) | aac
+    audio_bitrate_kbps: int = 192
+    mux_rate_kbps: int = 14000
     service_name: str = "In-House"
     service_provider: str = "Caritech"
     service_id: int = 1
@@ -99,6 +101,8 @@ def load(path: Optional[str] = None) -> PlayerConf:
     conf.output.width  # validates the resolution string
     if conf.output.video_codec not in ("mpeg2", "h264"):
         raise ValueError("video_codec must be mpeg2 or h264")
+    if conf.output.audio_codec not in ("mp2", "aac"):
+        raise ValueError("audio_codec must be mp2 or aac")
     return conf
 
 
@@ -118,6 +122,8 @@ def write_example(path: str, conf: PlayerConf) -> None:
         "fps = %d" % conf.output.fps,
         "video_codec = %s" % conf.output.video_codec,
         "video_bitrate_kbps = %d" % conf.output.video_bitrate_kbps,
+        "audio_codec = %s" % conf.output.audio_codec,
+        "audio_bitrate_kbps = %d" % conf.output.audio_bitrate_kbps,
         "mux_rate_kbps = %d" % conf.output.mux_rate_kbps,
         "service_name = %s" % conf.output.service_name,
         "service_provider = %s" % conf.output.service_provider,

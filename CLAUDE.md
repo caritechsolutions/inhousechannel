@@ -46,10 +46,11 @@ Measured, with rist running (2 cores = 200 %):
 | Synthetic 1080p30 MPEG-2 12 Mb/s encode | 61 % of one core (2.2× realtime) |
 | Synthetic 720p30 MPEG-2 8 Mb/s encode | 26 % of one core |
 | **Realtime 720p: x11grab + mpeg2video + TS → UDP, Chrome slate with 30 fps ticker, rist running** | **ffmpeg 34–42 %, Chrome ~15 %, Xvfb 3–6 %; box 34–51 % idle** |
+| **Realtime 1080p, same test, 12 Mb/s video + MP2 audio** | **ffmpeg 73–80 %, Chrome ~12 %, Xvfb ~7 %; box 26–32 % idle** |
 
-So the production design is **CPU-only MPEG-2 at 720p** (~60 % of the box's 200 %, no driver,
-no custom ffmpeg); `h264` via libx264 stays a config option for sites that need it. 1080p
-CPU-only would be ~225 % with the rist load and is not offered on these boxes. The earlier
+So the production design is **CPU-only MPEG-2 video + MP2 audio, 1080p by default** (~95 % of
+the box's 200 %, no driver, no custom ffmpeg); 720p (~60 %) is the config fallback for a busier
+box, and `h264` via libx264 / `aac` stay config options for sites that need them. The earlier
 VAAPI measurements stay here as the record of why the GPU path was dropped.
 
 These numbers drive the architecture below. **Rules:**
@@ -61,8 +62,8 @@ These numbers drive the architecture below. **Rules:**
    measure it on a hotel box before step 5 is designed.
 2. No GPU, VAAPI or custom ffmpeg dependency anywhere in the player; the distro ffmpeg is
    enough (`mpeg2video`, `libx264`, `x11grab`, `overlay`).
-3. Canvas is 1280×720 by default. Layouts are authored at 1920×1080 in the editor and the
-   renderer scales the page (CSS zoom) to the player's resolution.
+3. Output is 1920×1080 by default; layouts are authored at 1920×1080 and the renderer scales
+   the page (CSS zoom) when a player is set to 1280×720.
 4. Layout CSS animations run at 30 fps (`steps()` or 30 fps keyframe cadence) — 60 fps
    repaints roughly double Chrome's cost for no benefit on a 30 fps channel. The slate's
    ticker is the reference (`steps(N)` with N = seconds × 30).
@@ -98,11 +99,13 @@ address    = 239.1.1.10                        ; UDP multicast (unicast allowed)
 port       = 1234
 ttl        = 4
 interface  = (optional source interface)
-resolution = 1280x720                          ; default; 1080p needs a bigger box
+resolution = 1920x1080                         ; default; 1280x720 for a busier box
 fps        = 30
 video_codec = mpeg2                            ; or h264 (libx264)
-video_bitrate_kbps = 8000                      ; MPEG-2 CBR
-mux_rate_kbps      = 10000                     ; CBR TS for modulators
+video_bitrate_kbps = 12000                     ; MPEG-2 CBR (8000 at 720p)
+audio_codec = mp2                              ; or aac
+audio_bitrate_kbps = 192
+mux_rate_kbps      = 14000                     ; CBR TS for modulators
 service_name = In-House
 service_id   = 1
 pmt_pid = 4096 ; video_pid = 256 ; audio_pid = 257
@@ -113,11 +116,11 @@ pmt_pid = 4096 ; video_pid = 256 ; audio_pid = 257
 ```
                 ┌───────────────┐   X11 (RGB)   ┌─────────────────────────────┐
   layout HTML → │ Chrome + Xvfb │ ─────────────▶│ ffmpeg (CPU only)            │
-  (local files) │ 1280×720      │               │ x11grab → yuv420p            │
+  (local files) │ 1920×1080     │               │ x11grab → yuv420p            │
                 └───────────────┘               │ clip.mp4 → decode ────┐      │
                                                 │ overlay ◀─────────────┘      │ ─▶ UDP TS
                 ┌───────────────┐               │ audio: silent / music / clip │
-                │ sync + sched  │ ─ controls ─▶ │ mpeg2video + aac → mpegts    │
+                │ sync + sched  │ ─ controls ─▶ │ mpeg2video + mp2 → mpegts    │
                 └───────────────┘               └─────────────────────────────┘
 ```
 
@@ -130,7 +133,7 @@ pmt_pid = 4096 ; video_pid = 256 ; audio_pid = 257
   leaves it transparent/black. The daemon drives ffmpeg to decode the region's clip
   playlist (concat demuxer, looped) and the software `overlay` filter at that position. Clips are pre-normalised by the server (§3.4) so
   the player never transcodes.
-- **Audio**: from ffmpeg, never captured from Chrome. Modes: silent AAC (default —
+- **Audio**: from ffmpeg, never captured from Chrome. Modes: silent MP2 (default —
   an audio PID must always exist, modulators and STBs expect one), background music
   playlist, or the video clips' own audio.
 - **Continuity**: the TS must not stop when layouts change. Design the ffmpeg graph so
@@ -229,7 +232,8 @@ GET  /api/player/time          → server time (sanity check only)
 On upload, videos are transcoded server-side with ffmpeg (VM has no GPU; use
 `libx264 -preset medium`) to the player's profile so the box only ever hw-decodes:
 H.264 High, 1280×720, 30 fps CFR, `-g 60`, 6 Mbps max, AAC 48 kHz stereo, MP4 with
-`+faststart` (720p so the player's software decode stays cheap). Keep the original. Show progress in the UI; the media is unusable
+`+faststart` (720p so the player's software decode stays cheap; ffmpeg scales it into the
+region anyway). Keep the original. Show progress in the UI; the media is unusable
 in layouts until normalised.
 
 ### 3.5 `server/install.sh`
@@ -289,7 +293,7 @@ Every step ends with the player still producing a continuous TS on the test box.
 - `player/install.sh` (curl | bash), `inhousechannel-player.service` (runs as root for now),
   `player.conf.example`, `/usr/local/bin/inhousechannel-player`. Distro ffmpeg only.
 - Tested end-to-end in the dev container (Xvfb + Chromium + ffmpeg 6.1 → UDP → captured
-  with ffprobe: MPEG-2 Main 1280×720 30 fps 8 Mb/s PID 0x100 + AAC 0x101, decoded frame
-  shows the slate). Note: capturing with `ffmpeg -c copy` rewrites the SDT, so check
+  with ffprobe: MPEG-2 Main 30 fps PID 0x100 + audio 0x101, decoded frame shows the slate;
+  re-tested at 1080p/MP2 after the defaults changed). Note: capturing with `ffmpeg -c copy` rewrites the SDT, so check
   service names on the live stream, not a re-muxed file.
 - Not yet: sync, schedule, heartbeat (step 2); video regions (step 5).
