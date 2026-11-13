@@ -10,7 +10,7 @@ import time
 from typing import Dict, List, Optional
 
 from . import __version__
-from .config import RUN_DIR, PlayerConf
+from .config import RUN_DIR, PlayerConf, apply_output
 from .pipeline import chrome_command, ffmpeg_command, snapshot_command, udp_url, xvfb_command
 from .renderserver import RenderServer, hostname
 from .sync import Cache, Syncer
@@ -213,7 +213,31 @@ class Supervisor:
             self.write_status()
         return 0
 
+    def _apply_output_settings(self) -> None:
+        """CMS output settings (manifest.output) override the local conf; a change restarts the
+        encoder once. A resolution change also restarts Xvfb + Chrome (the screen size changes)."""
+        wanted = (self.syncer.manifest or {}).get("output")
+        if not wanted:
+            return
+        try:
+            changed = apply_output(self.conf, wanted)
+        except Exception as e:
+            self.note("ignoring CMS output settings: %s" % e)
+            return
+        if not changed:
+            return
+        self.note("output settings from CMS: %s" % ", ".join("%s=%s" % kv for kv in sorted(changed.items())))
+        if "resolution" in changed:
+            self.render.resolution = self.conf.output.resolution
+            self.render.set_current(None, None)
+            self.stop_all()
+            self.start_all("resolution changed to %s" % self.conf.output.resolution)
+        elif self.ffmpeg.alive():
+            self.ffmpeg.stop()
+            self.ffmpeg.start("output settings changed")
+
     def _apply_schedule(self) -> None:
+        self._apply_output_settings()
         lid = self.syncer.current_layout_id()
         d = self.syncer.current_layout_dir()
         if self.render.set_current(lid, d):
@@ -253,6 +277,8 @@ class Supervisor:
             "layout_id": self.render.current_layout_id, "resolution": self.conf.output.resolution,
             "fps": self.conf.output.fps, "output": udp_url(self.conf).split("?")[0].replace("udp://", ""),
             "video_codec": self.conf.output.video_codec, "bitrate_kbps": self.conf.output.video_bitrate_kbps,
+            "applied_output": {k: getattr(self.conf.output, k) for k in ("address", "port", "ttl", "resolution", "fps", "video_codec",
+                               "video_bitrate_kbps", "audio_codec", "audio_bitrate_kbps", "mux_rate_kbps", "service_name")},
             "cpu_pct": cpu_percent(), "load_avg": os.getloadavg()[0],
             "restarts_last_hour": sum(p.restarts_last_hour() for p in (self.xvfb, self.chrome, self.ffmpeg)),
             "procs_alive": {p.name: p.alive() for p in (self.xvfb, self.chrome, self.ffmpeg)},

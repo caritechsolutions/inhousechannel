@@ -59,6 +59,7 @@ function createPlayers(db, { now = () => new Date() } = {}) {
     const ctx = { site: p.site_name, logo: p.logo_media_id ? `media:${p.logo_media_id}` : '' };
     return {
       player: { id: p.id, name: p.name, resolution: p.resolution, site_tz: p.site_tz, site: p.site_name },
+      output: safeJson(p.settings_json),      // desired output settings; null = keep the box's conf
       ctx,
       default_layout_id: p.default_layout_id || null,
       current_layout_id: resolveLayout({ default_layout_id: p.default_layout_id, schedules }, now(), p.site_tz),
@@ -74,7 +75,7 @@ function createPlayers(db, { now = () => new Date() } = {}) {
     return `"${crypto.createHash('sha256').update(JSON.stringify(rest)).digest('hex').slice(0, 32)}"`;
   }
 
-  const STATUS_KEYS = ['version', 'uptime_s', 'layout_id', 'page_id', 'cpu_pct', 'fps', 'bitrate_kbps', 'restarts_last_hour', 'cache_bytes', 'last_sync_at', 'resolution', 'output', 'errors'];
+  const STATUS_KEYS = ['version', 'uptime_s', 'layout_id', 'page_id', 'cpu_pct', 'fps', 'bitrate_kbps', 'restarts_last_hour', 'cache_bytes', 'last_sync_at', 'resolution', 'output', 'applied_output', 'errors'];
   function heartbeat(p, body) {
     const st = {};
     for (const k of STATUS_KEYS) if (body && body[k] !== undefined) st[k] = body[k];
@@ -82,7 +83,7 @@ function createPlayers(db, { now = () => new Date() } = {}) {
     db.prepare(`UPDATE players SET last_seen_at = ?, last_status_json = ?, version = COALESCE(?, version),
       output_json = COALESCE(?, output_json) WHERE id = ?`)
       .run(st.received_at, JSON.stringify(st), body && body.version != null ? String(body.version).slice(0, 40) : null,
-        body && body.output && typeof body.output === 'object' ? JSON.stringify(body.output) : null, p.id);
+        body && body.applied_output && typeof body.applied_output === 'object' ? JSON.stringify(body.applied_output) : null, p.id);
     return st;
   }
 
@@ -91,6 +92,7 @@ function createPlayers(db, { now = () => new Date() } = {}) {
   function toApi(p, { layoutName = null } = {}) {
     return { id: p.id, site_id: p.site_id, name: p.name, key_tail: p.key_tail, resolution: p.resolution, default_layout_id: p.default_layout_id,
       version: p.version, last_seen_at: p.last_seen_at, online: isOnline(p), status: safeJson(p.last_status_json), output: safeJson(p.output_json),
+      settings: safeJson(p.settings_json),
       thumbnail_url: p.thumbnail_path ? `/api/admin/sites/${p.site_id}/players/${p.id}/thumbnail?t=${encodeURIComponent(p.last_seen_at || '')}` : null,
       current_layout_id: currentLayoutId(p), current_layout_name: layoutName, created_at: p.created_at };
   }
@@ -98,4 +100,35 @@ function createPlayers(db, { now = () => new Date() } = {}) {
   return { byKey, create, rotateKey, manifest, manifestEtag, heartbeat, isOnline, toApi, currentLayoutId, RESOLUTIONS, ONLINE_S };
 }
 
-module.exports = { createPlayers, newKey, hashKey, pairCommand, RESOLUTIONS };
+// Output settings a site admin can set per player; the player applies them on its next sync
+// (restarting its encoder once). Keys and ranges mirror player.conf [output].
+const SETTINGS = {
+  resolution: { type: 'enum', values: RESOLUTIONS },
+  address: { type: 'ip' }, port: { type: 'int', min: 1, max: 65535 }, ttl: { type: 'int', min: 1, max: 64 },
+  interface: { type: 'ip', empty: true },
+  fps: { type: 'enum', values: [25, 30] },
+  video_codec: { type: 'enum', values: ['mpeg2', 'h264'] }, video_bitrate_kbps: { type: 'int', min: 1000, max: 30000 },
+  audio_codec: { type: 'enum', values: ['mp2', 'aac'] }, audio_bitrate_kbps: { type: 'int', min: 64, max: 384 },
+  mux_rate_kbps: { type: 'int', min: 1500, max: 40000 },
+  service_name: { type: 'str', max: 32 }, service_provider: { type: 'str', max: 32 }, service_id: { type: 'int', min: 1, max: 65535 },
+  pmt_pid: { type: 'int', min: 32, max: 8186 }, video_pid: { type: 'int', min: 32, max: 8186 },
+};
+function validateSettings(input) {
+  const out = {}, errors = [];
+  if (input === null) return { settings: null, errors };
+  if (!input || typeof input !== 'object') return { settings: null, errors: ['settings must be an object'] };
+  for (const [k, v] of Object.entries(input)) {
+    const spec = SETTINGS[k];
+    if (!spec) { errors.push(`unknown setting ${k}`); continue; }
+    if (v === null || v === undefined || v === '') { if (spec.empty || spec.type === 'str') { if (spec.type === 'ip') out[k] = ''; continue; } errors.push(`${k} is empty`); continue; }
+    if (spec.type === 'int') { const n = Number(v); if (!Number.isInteger(n) || n < spec.min || n > spec.max) errors.push(`${k} must be an integer ${spec.min}–${spec.max}`); else out[k] = n; }
+    else if (spec.type === 'enum') { const n = typeof spec.values[0] === 'number' ? Number(v) : String(v); if (!spec.values.includes(n)) errors.push(`${k} must be one of ${spec.values.join(', ')}`); else out[k] = n; }
+    else if (spec.type === 'ip') { if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(String(v)) || String(v).split('.').some((o) => Number(o) > 255)) errors.push(`${k} must be an IPv4 address`); else out[k] = String(v); }
+    else if (spec.type === 'str') { const t = String(v).trim().slice(0, spec.max); if (!/^[\x20-\x7e]*$/.test(t)) errors.push(`${k} must be plain ASCII`); else out[k] = t; }
+  }
+  if (out.mux_rate_kbps && out.video_bitrate_kbps && out.mux_rate_kbps <= out.video_bitrate_kbps + (out.audio_bitrate_kbps || 192)) errors.push('mux_rate_kbps must exceed video + audio bitrate');
+  if (out.pmt_pid && out.video_pid && (out.pmt_pid === out.video_pid || out.pmt_pid === out.video_pid + 1)) errors.push('pmt_pid must not collide with video/audio PIDs');
+  return { settings: out, errors };
+}
+
+module.exports = { createPlayers, newKey, hashKey, pairCommand, RESOLUTIONS, SETTINGS, validateSettings };

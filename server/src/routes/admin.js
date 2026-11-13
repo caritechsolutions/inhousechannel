@@ -10,7 +10,8 @@ const Busboy = require('busboy');
 const { createUser, normEmail, hashPassword, ROLE_RANK } = require('../auth');
 const { validateLayout, layoutTemplates, templateLayout, blankLayout, ZONE_TYPES } = require('../layout');
 const { validateSchedule } = require('../schedule');
-const { pairCommand, RESOLUTIONS } = require('../players');
+const { pairCommand, RESOLUTIONS, validateSettings } = require('../players');
+const safeJson = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
 
 function safe(s) { try { return s ? JSON.parse(s) : null; } catch { return null; } }
 function slugify(s) { return String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40); }
@@ -235,6 +236,14 @@ function createAdminRouter({ db, auth, players, media, publicUrl = null, log = (
     if (b.default_layout_id !== undefined) {
       if (b.default_layout_id != null && !qLayout.get(Number(b.default_layout_id), req.site.id)) return res.status(400).json({ error: 'unknown layout' });
       upd.default_layout_id = b.default_layout_id == null ? null : Number(b.default_layout_id);
+    }
+    if (b.settings !== undefined) {
+      // merge over what is stored so the UI can send only the changed keys; null clears all
+      const current = b.settings === null ? null : { ...(safeJson(p.settings_json) || {}), ...b.settings };
+      const { settings, errors } = validateSettings(current);
+      if (errors.length) return res.status(400).json({ error: errors.join('; '), errors });
+      upd.settings_json = settings && Object.keys(settings).length ? JSON.stringify(settings) : null;
+      if (settings && settings.resolution) upd.resolution = settings.resolution;
     }
     const keys = Object.keys(upd);
     if (keys.length) db.prepare(`UPDATE players SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => upd[k]), p.id);

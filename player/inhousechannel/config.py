@@ -74,6 +74,30 @@ class PlayerConf:
         return "ffmpeg"
 
 
+OUTPUT_KEYS = ("address", "port", "ttl", "interface", "resolution", "fps", "video_codec", "video_bitrate_kbps",
+               "audio_codec", "audio_bitrate_kbps", "mux_rate_kbps", "service_name", "service_provider",
+               "service_id", "pmt_pid", "video_pid")
+
+
+def apply_output(conf: "PlayerConf", values: dict) -> dict:
+    """Apply CMS output settings on top of the conf. Returns the keys that changed.
+    Unknown keys are ignored; types follow the dataclass field."""
+    changed = {}
+    for k, v in (values or {}).items():
+        if k not in OUTPUT_KEYS or v is None:
+            continue
+        current = getattr(conf.output, k)
+        v = int(v) if isinstance(current, int) and not isinstance(current, bool) else str(v).strip()
+        if v != current:
+            setattr(conf.output, k, v)
+            changed[k] = v
+    if changed:
+        conf.output.width   # validate the resolution string
+        if conf.output.video_codec not in ("mpeg2", "h264") or conf.output.audio_codec not in ("mp2", "aac"):
+            raise ValueError("bad codec in output settings")
+    return changed
+
+
 def _apply(section, obj, cp: configparser.ConfigParser) -> None:
     if not cp.has_section(section):
         return

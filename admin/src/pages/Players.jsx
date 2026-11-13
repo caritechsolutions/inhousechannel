@@ -68,15 +68,48 @@ function PlayerList({ siteId, site }) {
   );
 }
 
+const OUTPUT_DEFAULTS = { address: '239.1.1.10', port: 1234, ttl: 4, fps: 30, video_codec: 'mpeg2', video_bitrate_kbps: 8000, audio_codec: 'mp2', audio_bitrate_kbps: 192, mux_rate_kbps: 10000, service_name: 'In-House' };
+
 function PlayerModal({ player, layouts, onSave, onClose }) {
   const [f, setF] = useState({ name: (player && player.name) || '', resolution: (player && player.resolution) || '1280x720', default_layout_id: (player && player.default_layout_id) || null });
+  // Output settings: empty = not managed by the CMS (the box keeps its own player.conf).
+  const [managed, setManaged] = useState(!!(player && player.settings && Object.keys(player.settings).length));
+  const [o, setO] = useState({ ...OUTPUT_DEFAULTS, ...((player && player.output) || {}), ...((player && player.settings) || {}) });
+  const num = (k) => (e) => setO({ ...o, [k]: e.target.value === '' ? '' : Number(e.target.value) });
+  const str = (k) => (e) => setO({ ...o, [k]: e.target.value });
+  const muxLow = Number(o.mux_rate_kbps) <= Number(o.video_bitrate_kbps) + Number(o.audio_bitrate_kbps || 192);
+  const save = () => {
+    const body = { ...f, name: f.name.trim() };
+    if (managed) { const { resolution, ...rest } = o; body.settings = rest; } else if (player && player.settings) body.settings = null;
+    onSave(body);
+  };
   return (
-    <Modal title={player ? `Edit ${player.name}` : 'New player'} onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={!f.name.trim()} onClick={() => onSave({ ...f, name: f.name.trim() })}>{player ? 'Save' : 'Create'}</button></>}>
+    <Modal title={player ? `Edit ${player.name}` : 'New player'} onClose={onClose} wide footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={!f.name.trim() || (managed && muxLow)} onClick={save}>{player ? 'Save' : 'Create'}</button></>}>
       <Field label="Name" hint="e.g. “test modulator”, “Lobby channel”"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus aria-label="Player name" /></Field>
       <div className="row">
         <Field label="Resolution" hint="720p is the measured default for a busy box; 1080p needs headroom."><select value={f.resolution} onChange={(e) => setF({ ...f, resolution: e.target.value })} aria-label="Resolution">{RESOLUTIONS.map((r) => <option key={r} value={r}>{r}</option>)}</select></Field>
         <Field label="Default layout"><select value={f.default_layout_id || ''} onChange={(e) => setF({ ...f, default_layout_id: e.target.value ? Number(e.target.value) : null })} aria-label="Default layout"><option value="">— none (built-in slate) —</option>{layouts.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></Field>
       </div>
+      <h4 style={{ margin: '16px 0 4px' }}>Output</h4>
+      <label className="inline" style={{ gap: 8, marginBottom: 8 }}><input type="checkbox" checked={managed} onChange={(e) => setManaged(e.target.checked)} aria-label="Manage output settings from the CMS" /> Manage output settings from here <span className="muted small">(otherwise the box keeps its own player.conf). A change restarts the encoder for a few seconds.</span></label>
+      {managed && <>
+        <div className="row">
+          <Field label="Multicast address"><input value={o.address} onChange={str('address')} aria-label="Multicast address" /></Field>
+          <Field label="UDP port"><input type="number" min="1" max="65535" value={o.port} onChange={num('port')} aria-label="UDP port" /></Field>
+          <Field label="TTL"><input type="number" min="1" max="64" value={o.ttl} onChange={num('ttl')} aria-label="TTL" /></Field>
+        </div>
+        <div className="row">
+          <Field label="Video codec"><select value={o.video_codec} onChange={str('video_codec')} aria-label="Video codec"><option value="mpeg2">MPEG-2 (universal)</option><option value="h264">H.264 (libx264, more CPU)</option></select></Field>
+          <Field label="Video bitrate (kb/s)" hint="MPEG-2 CBR: 8000 at 720p, 12000 at 1080p"><input type="number" min="1000" max="30000" step="500" value={o.video_bitrate_kbps} onChange={num('video_bitrate_kbps')} aria-label="Video bitrate" /></Field>
+          <Field label="Frame rate"><select value={o.fps} onChange={num('fps')} aria-label="Frame rate"><option value={30}>30</option><option value={25}>25</option></select></Field>
+        </div>
+        <div className="row">
+          <Field label="Audio codec"><select value={o.audio_codec} onChange={str('audio_codec')} aria-label="Audio codec"><option value="mp2">MP2</option><option value="aac">AAC</option></select></Field>
+          <Field label="Audio bitrate (kb/s)"><input type="number" min="64" max="384" step="32" value={o.audio_bitrate_kbps} onChange={num('audio_bitrate_kbps')} aria-label="Audio bitrate" /></Field>
+          <Field label="Mux rate (kb/s)" hint={muxLow ? 'must exceed video + audio bitrate' : 'total TS rate the modulator sees (CBR with null padding)'}><input type="number" min="1500" max="40000" step="500" value={o.mux_rate_kbps} onChange={num('mux_rate_kbps')} aria-label="Mux rate" style={muxLow ? { borderColor: '#e55' } : undefined} /></Field>
+        </div>
+        <Field label="Service name" hint="shown by STBs / modulators in the channel list"><input maxLength={32} value={o.service_name} onChange={str('service_name')} aria-label="Service name" /></Field>
+      </>}
     </Modal>
   );
 }
@@ -116,7 +149,7 @@ function PlayerDrawer({ siteId, player, layouts, onClose, onChanged }) {
           <dt>Playing now</dt><dd>{playingName(player) || <span className="muted">—</span>}</dd>
           <dt>Resolution</dt><dd>{player.resolution || '—'}</dd>
           <dt>Version</dt><dd>{player.version || '—'}</dd>
-          <dt>Output</dt><dd>{player.output ? `${player.output.address}:${player.output.port} · ${player.output.video_codec || ''} ${player.output.video_bitrate_kbps ? player.output.video_bitrate_kbps + ' kb/s' : ''}` : <span className="muted">as the box reports it</span>}</dd>
+          <dt>Output</dt><dd>{player.output ? `${player.output.address}:${player.output.port} · ${player.output.resolution || ''} ${player.output.video_codec || ''} ${player.output.video_bitrate_kbps ? player.output.video_bitrate_kbps + ' kb/s' : ''} · mux ${player.output.mux_rate_kbps || '?'} kb/s` : <span className="muted">not reported yet</span>}{player.settings && Object.keys(player.settings).length ? <div className="muted small">managed from the CMS{player.output && Object.keys(player.settings).some((k) => String(player.settings[k]) !== String(player.output[k])) ? ' — box has not applied the latest settings yet' : ' — applied'}</div> : <div className="muted small">as set in the box's player.conf</div>}</dd>
           <dt>Health</dt><dd>{st.fps != null ? `${Math.round(st.fps)} fps` : '—'}{st.cpu_pct != null ? ` · ${Math.round(st.cpu_pct)} % CPU` : ''}{st.bitrate_kbps != null ? ` · ${(st.bitrate_kbps / 1000).toFixed(1)} Mb/s` : ''}{st.uptime_s != null ? ` · up ${fmtUptime(st.uptime_s)}` : ''}{st.restarts_last_hour ? ` · ${st.restarts_last_hour} restarts in the last hour` : ''}</dd>
           <dt>Last heartbeat</dt><dd>{timeAgo(player.last_seen_at)}</dd>
         </dl>

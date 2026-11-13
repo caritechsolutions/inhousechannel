@@ -359,3 +359,18 @@ Every step ends with the player still producing a continuous TS on the test box.
   decoded off the TS, clip audio on the MP2 track, zone removal → one encoder restart, TS continues.
 - Limits for now: one video zone; it shows on every page that lists it (no per-page start/stop);
   a video that fails to decode is logged and skipped (ffmpeg's concat `-safe 0`).
+
+### Output settings from the CMS (built 2026-11-12)
+
+- Migration 002 `players.settings_json` = desired output settings (NULL = box keeps its own
+  player.conf). `players.validateSettings()` whitelists keys/ranges (address, port, ttl,
+  interface, resolution, fps, codecs, bitrates, mux rate > video + audio, service name/
+  provider/id, PIDs). `PATCH /players/:id {settings}` merges over the stored set (`null` clears);
+  the manifest carries them as `output`; the heartbeat's `applied_output` is stored in
+  `output_json` as the read-only mirror, so the drawer can say "applied" vs "not yet".
+- Player: `config.apply_output()` overlays manifest.output on the conf at every schedule
+  tick; a change restarts ffmpeg once ("output settings changed"); a resolution change restarts
+  Xvfb + Chrome + ffmpeg. Local conf stays the fallback for unpaired or never-managed players.
+- Admin: player modal has a "Manage output settings from here" section (pre-filled from what
+  the box reports). Verified end to end here: 5000 kb/s set in the CMS → stream at 5000 kb/s
+  within one sync, reported back.
