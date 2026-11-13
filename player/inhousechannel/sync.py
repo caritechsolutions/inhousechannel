@@ -22,7 +22,6 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
-import zoneinfo
 from typing import Dict, Optional, Tuple
 
 from . import __version__
@@ -248,16 +247,39 @@ def media_refs(doc, media_by_id: Dict[str, dict]) -> list:
 
 
 # -- schedule ---------------------------------------------------------------------------
+def to_local(when: dt.datetime, tzname: str) -> dt.datetime:
+    """Convert an aware datetime to the site timezone. Python ≥ 3.9 uses zoneinfo; on 3.8
+    (Ubuntu 20.04 hotel boxes) fall back to the C library via the TZ environment variable,
+    which reads the same system tzdata."""
+    try:
+        import zoneinfo
+        return when.astimezone(zoneinfo.ZoneInfo(tzname))
+    except Exception:
+        pass
+    import time as _time
+    old = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = tzname
+        _time.tzset()
+        lt = _time.localtime(when.timestamp())
+        off = dt.timedelta(seconds=lt.tm_gmtoff)
+        return when.astimezone(dt.timezone(off))
+    except Exception:
+        return when.astimezone(dt.timezone.utc)
+    finally:
+        if old is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old
+        _time.tzset()
+
+
 def resolve_layout_id(manifest: dict, now: Optional[dt.datetime] = None) -> Optional[int]:
     """Same rule as the server: highest priority enabled schedule whose date range, weekday
     (bit0 = Sunday, as in JS getDay()) and time window (overnight allowed — the window belongs
     to the weekday it started on) contain `now` in the site timezone; else the default layout."""
     tzname = (manifest.get("player") or {}).get("site_tz") or "UTC"
-    try:
-        tz = zoneinfo.ZoneInfo(tzname)
-    except Exception:
-        tz = dt.timezone.utc
-    now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(tz)
+    now = to_local(now or dt.datetime.now(dt.timezone.utc), tzname)
     today = now.date().isoformat()
     hhmm = now.strftime("%H:%M")
     dow = (now.weekday() + 1) % 7            # Sunday = 0
