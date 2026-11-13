@@ -75,7 +75,7 @@ function createPlayers(db, { now = () => new Date() } = {}) {
     return `"${crypto.createHash('sha256').update(JSON.stringify(rest)).digest('hex').slice(0, 32)}"`;
   }
 
-  const STATUS_KEYS = ['version', 'uptime_s', 'layout_id', 'page_id', 'cpu_pct', 'fps', 'bitrate_kbps', 'restarts_last_hour', 'cache_bytes', 'last_sync_at', 'resolution', 'output', 'applied_output', 'errors'];
+  const STATUS_KEYS = ['version', 'uptime_s', 'layout_id', 'page_id', 'cpu_pct', 'player_cpu_pct', 'cpu_cores', 'load_avg', 'fps', 'bitrate_kbps', 'restarts_last_hour', 'cache_bytes', 'last_sync_at', 'resolution', 'output', 'applied_output', 'errors'];
   function heartbeat(p, body) {
     const st = {};
     for (const k of STATUS_KEYS) if (body && body[k] !== undefined) st[k] = body[k];

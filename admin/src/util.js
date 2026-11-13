@@ -52,3 +52,11 @@ export function daysText(mask) {
 export async function copyText(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 }
+
+// Box CPU is 0–100 of the whole machine; player_cpu_pct is the player's own share of it.
+export function cpuText(st) {
+  if (!st || st.cpu_pct == null) return null;
+  const box = Math.round(st.cpu_pct);
+  const own = st.player_cpu_pct != null ? ` (player ${Math.round(st.player_cpu_pct)} %)` : '';
+  return `box ${box} % busy${own}`;
+}

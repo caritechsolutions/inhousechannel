@@ -279,7 +279,8 @@ class Supervisor:
             "video_codec": self.conf.output.video_codec, "bitrate_kbps": self.conf.output.video_bitrate_kbps,
             "applied_output": {k: getattr(self.conf.output, k) for k in ("address", "port", "ttl", "resolution", "fps", "video_codec",
                                "video_bitrate_kbps", "audio_codec", "audio_bitrate_kbps", "mux_rate_kbps", "service_name")},
-            "cpu_pct": cpu_percent(), "load_avg": os.getloadavg()[0],
+            "cpu_pct": cpu_percent(), "player_cpu_pct": player_cpu_percent(), "cpu_cores": os.cpu_count(),
+            "load_avg": round(os.getloadavg()[0], 2),
             "restarts_last_hour": sum(p.restarts_last_hour() for p in (self.xvfb, self.chrome, self.ffmpeg)),
             "procs_alive": {p.name: p.alive() for p in (self.xvfb, self.chrome, self.ffmpeg)},
             "cache_bytes": self.cache.size_bytes(), "last_sync_at": self.syncer.last_sync_at,
@@ -328,7 +329,7 @@ _cpu_prev = None
 
 
 def cpu_percent() -> float:
-    """Whole-box CPU % since the previous call (0–100 × cores), from /proc/stat."""
+    """Whole-box CPU busy % (0–100 of the whole machine) since the previous call, from /proc/stat."""
     global _cpu_prev
     try:
         with open("/proc/stat") as f:
@@ -339,7 +340,52 @@ def cpu_percent() -> float:
     prev, _cpu_prev = _cpu_prev, (total, idle)
     if not prev or total == prev[0]:
         return 0.0
-    return round(100.0 * (1 - (idle - prev[1]) / (total - prev[0])) * os.cpu_count(), 1)
+    return round(100.0 * (1 - (idle - prev[1]) / (total - prev[0])), 1)
+
+
+_pcpu_prev = None
+
+
+def _service_cpu_ns() -> Optional[int]:
+    """CPU time used by this systemd service (Xvfb + Chrome and all its children + ffmpeg)
+    from its cgroup: v2 cpu.stat, else v1 cpuacct.usage. None when not under systemd."""
+    try:
+        with open("/proc/self/cgroup") as f:
+            lines = f.read().splitlines()
+    except Exception:
+        return None
+    for line in lines:
+        parts = line.split(":", 2)
+        if len(parts) != 3:
+            continue
+        hier, ctrl, path = parts
+        if hier == "0":                                   # cgroup v2
+            try:
+                with open("/sys/fs/cgroup" + path + "/cpu.stat") as f:
+                    for l in f:
+                        if l.startswith("usage_usec"):
+                            return int(l.split()[1]) * 1000
+            except Exception:
+                pass
+        elif "cpuacct" in ctrl.split(","):                # cgroup v1 (Ubuntu 20.04)
+            for base in ("/sys/fs/cgroup/cpu,cpuacct", "/sys/fs/cgroup/cpuacct"):
+                try:
+                    with open(base + path + "/cpuacct.usage") as f:
+                        return int(f.read().strip())
+                except Exception:
+                    continue
+    return None
+
+
+def player_cpu_percent() -> Optional[float]:
+    """The player's own share of the whole machine (0–100) since the previous call."""
+    global _pcpu_prev
+    ns = _service_cpu_ns()
+    now = time.monotonic()
+    prev, _pcpu_prev = _pcpu_prev, (ns, now)
+    if ns is None or not prev or prev[0] is None or now <= prev[1]:
+        return None
+    return round(100.0 * (ns - prev[0]) / 1e9 / (now - prev[1]) / (os.cpu_count() or 1), 1)
 
 
 def snapshot(conf: PlayerConf, out_png: str) -> None:

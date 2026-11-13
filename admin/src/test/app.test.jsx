@@ -18,7 +18,7 @@ export function fakeApi({ superadmin = true } = {}) {
   const state = {
     me: null,
     sites,
-    players: [{ id: 7, site_id: 1, name: 'test modulator', online: true, last_seen_at: new Date().toISOString(), version: '0.1.0', resolution: '1280x720', current_layout_id: 3, current_layout_name: 'Lobby', thumbnail_url: null, default_layout_id: 3, status: { cpu_pct: 61, fps: 30, bitrate_kbps: 10000, restarts_last_hour: 0, uptime_s: 86400 * 2 + 3600 } }],
+    players: [{ id: 7, site_id: 1, name: 'test modulator', online: true, last_seen_at: new Date().toISOString(), version: '0.1.0', resolution: '1280x720', current_layout_id: 3, current_layout_name: 'Lobby', thumbnail_url: null, default_layout_id: 3, status: { cpu_pct: 61, player_cpu_pct: 28, fps: 30, bitrate_kbps: 10000, restarts_last_hour: 0, uptime_s: 86400 * 2 + 3600 } }],
     layouts: [{ id: 3, name: 'Lobby', updated_at: '2026-10-28 12:00:00', json: { schema: 2, canvas: { w: 1920, h: 1080 }, zones: [], pages: [{ id: 'page1', name: 'Page 1', zones: [], duration_s: 15 }] } }],
     schedules: [],
     calls: [],
@@ -73,7 +73,7 @@ describe('admin app', () => {
     const card = await screen.findByTestId('player-card');
     expect(within(card).getByText('test modulator')).toBeTruthy();
     expect(within(card).getByText('30 fps')).toBeTruthy();
-    expect(within(card).getByText('61 % CPU')).toBeTruthy();
+    expect(within(card).getByText('CPU box 61 % busy (player 28 %)')).toBeTruthy();
     expect(within(card).getByText('Lobby')).toBeTruthy();
     // superadmin sees the site switcher with every site, and the superadmin nav
     const sw = await screen.findByLabelText('Site');

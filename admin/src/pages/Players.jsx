@@ -1,3 +1,4 @@
+import { cpuText } from '../util';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { get, post, put, patch, del } from '../api.js';
@@ -53,7 +54,7 @@ function PlayerList({ siteId, site }) {
                   <td>{layoutName(p.default_layout_id) || <span className="muted">—</span>}</td>
                   <td className="muted">{playingName(p) || '—'}</td>
                   <td className="muted small">{p.resolution || '—'}{p.output ? <div>{p.output.address}:{p.output.port}</div> : null}</td>
-                  <td className="muted small">{st.fps != null ? `${Math.round(st.fps)} fps` : ''}{st.cpu_pct != null ? ` · ${Math.round(st.cpu_pct)} % CPU` : ''}{st.restarts_last_hour ? <span className="warn"> · {st.restarts_last_hour} restarts/h</span> : null}</td>
+                  <td className="muted small">{st.fps != null ? `${Math.round(st.fps)} fps` : ''}{cpuText(st) ? ` · ${cpuText(st)}` : ''}{st.restarts_last_hour ? <span className="warn"> · {st.restarts_last_hour} restarts/h</span> : null}</td>
                   <td className="muted small">{timeAgo(p.last_seen_at)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}><button className="sm" onClick={() => nav(`/players/${p.id}`)}>Open</button> <button className="sm danger" onClick={() => setRemoving(p)}>Delete</button></td>
                 </tr>);
@@ -150,7 +151,7 @@ function PlayerDrawer({ siteId, player, layouts, onClose, onChanged }) {
           <dt>Resolution</dt><dd>{player.resolution || '—'}</dd>
           <dt>Version</dt><dd>{player.version || '—'}</dd>
           <dt>Output</dt><dd>{player.output ? `${player.output.address}:${player.output.port} · ${player.output.resolution || ''} ${player.output.video_codec || ''} ${player.output.video_bitrate_kbps ? player.output.video_bitrate_kbps + ' kb/s' : ''} · mux ${player.output.mux_rate_kbps || '?'} kb/s` : <span className="muted">not reported yet</span>}{player.settings && Object.keys(player.settings).length ? <div className="muted small">managed from the CMS{player.output && Object.keys(player.settings).some((k) => String(player.settings[k]) !== String(player.output[k])) ? ' — box has not applied the latest settings yet' : ' — applied'}</div> : <div className="muted small">as set in the box's player.conf</div>}</dd>
-          <dt>Health</dt><dd>{st.fps != null ? `${Math.round(st.fps)} fps` : '—'}{st.cpu_pct != null ? ` · ${Math.round(st.cpu_pct)} % CPU` : ''}{st.bitrate_kbps != null ? ` · ${(st.bitrate_kbps / 1000).toFixed(1)} Mb/s` : ''}{st.uptime_s != null ? ` · up ${fmtUptime(st.uptime_s)}` : ''}{st.restarts_last_hour ? ` · ${st.restarts_last_hour} restarts in the last hour` : ''}</dd>
+          <dt>Health</dt><dd>{st.fps != null ? `${Math.round(st.fps)} fps` : '—'}{cpuText(st) ? ` · CPU ${cpuText(st)}` : ''}{st.bitrate_kbps != null ? ` · ${(st.bitrate_kbps / 1000).toFixed(1)} Mb/s` : ''}{st.uptime_s != null ? ` · up ${fmtUptime(st.uptime_s)}` : ''}{st.restarts_last_hour ? ` · ${st.restarts_last_hour} restarts in the last hour` : ''}</dd>
           <dt>Last heartbeat</dt><dd>{timeAgo(player.last_seen_at)}</dd>
         </dl>
       </div>

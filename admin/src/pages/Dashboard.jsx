@@ -1,3 +1,4 @@
+import { cpuText } from '../util';
 import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { get } from '../api.js';
@@ -55,7 +56,7 @@ export function PlayerCard({ p, onOpen }) {
         <div className="small">{layoutName ? <>Playing <b>{layoutName}</b></> : <span className="muted">no layout assigned</span>}</div>
         <div className="muted small player-stats">
           <span title="encode fps">{st.fps != null ? `${Math.round(st.fps)} fps` : '— fps'}</span>
-          <span title="CPU">{st.cpu_pct != null ? `${Math.round(st.cpu_pct)} % CPU` : '— CPU'}</span>
+          <span title="CPU: whole box busy %, and the player's own share of it">{cpuText(st) ? `CPU ${cpuText(st)}` : '— CPU'}</span>
           <span title="TS bitrate">{st.bitrate_kbps != null ? `${(st.bitrate_kbps / 1000).toFixed(1)} Mb/s` : ''}</span>
           {st.restarts_last_hour ? <span className="warn" title="restarts in the last hour">{st.restarts_last_hour} restart{st.restarts_last_hour === 1 ? '' : 's'}/h</span> : null}
         </div>
