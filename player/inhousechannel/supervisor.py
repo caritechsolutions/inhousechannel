@@ -25,6 +25,7 @@ class Proc:
         self.name = name
         self.cmd_fn = cmd_fn
         self.env = env
+        self.env_fn = None                      # optional callable → extra env evaluated at start
         self.p: Optional[subprocess.Popen] = None
         self.started_at = 0.0
         self.restarts: List[float] = []        # timestamps of restarts
@@ -40,6 +41,8 @@ class Proc:
         env = dict(os.environ)
         if self.env:
             env.update(self.env)
+        if self.env_fn:
+            env.update(self.env_fn())
         self.p = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                                   start_new_session=True)
@@ -106,8 +109,12 @@ class Supervisor:
                                    layouts_dir=os.path.join(self.cache.root, "layouts"),
                                    resolution=conf.output.resolution)
         self.xvfb = Proc("Xvfb", lambda: xvfb_command(conf))
+        # Chrome draws clocks in its own local time; give it the site's timezone (from the
+        # manifest), not the box's — hotel boxes run on UTC.
+        self.tz = self._site_tz()
         self.chrome = Proc("chrome", lambda: chrome_command(conf, self.render.url),
                            env={"DISPLAY": conf.render.display, "HOME": "/var/lib/inhousechannel"})
+        self.chrome.env_fn = lambda: {"TZ": self.tz} if self.tz else {}
         self.video = None                     # current overlay spec (None = graphics only)
         self.ffmpeg = Proc("ffmpeg", lambda: ffmpeg_command(conf, video=self.video), env={"DISPLAY": conf.render.display})
         self.events: List[str] = []
@@ -132,6 +139,7 @@ class Supervisor:
             "layout_id": self.render.current_layout_id,
             "render_url": self.render.current_url,
             "video": {k: v for k, v in (self.video or {}).items() if k != "playlist"} or None,
+            "timezone": self.tz,
             "last_sync_at": self.syncer.last_sync_at,
             "sync_error": self.syncer.last_error,
             "cache_bytes": self.cache.size_bytes(),
@@ -213,6 +221,18 @@ class Supervisor:
             self.write_status()
         return 0
 
+    def _site_tz(self) -> Optional[str]:
+        return ((self.syncer.manifest or {}).get("player") or {}).get("site_tz") or None
+
+    def _apply_timezone(self) -> None:
+        tz = self._site_tz()
+        if tz and tz != self.tz:
+            self.note("timezone from CMS: %s (was %s); restarting Chrome" % (tz, self.tz or "box default"))
+            self.tz = tz
+            if self.chrome.alive():
+                self.chrome.stop()
+                self.chrome.start("timezone changed to %s" % tz)
+
     def _apply_output_settings(self) -> None:
         """CMS output settings (manifest.output) override the local conf; a change restarts the
         encoder once. A resolution change also restarts Xvfb + Chrome (the screen size changes)."""
@@ -238,6 +258,7 @@ class Supervisor:
 
     def _apply_schedule(self) -> None:
         self._apply_output_settings()
+        self._apply_timezone()
         lid = self.syncer.current_layout_id()
         d = self.syncer.current_layout_dir()
         if self.render.set_current(lid, d):

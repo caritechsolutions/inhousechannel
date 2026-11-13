@@ -374,3 +374,10 @@ Every step ends with the player still producing a continuous TS on the test box.
 - Admin: player modal has a "Manage output settings from here" section (pre-filled from what
   the box reports). Verified end to end here: 5000 kb/s set in the CMS → stream at 5000 kb/s
   within one sync, reported back.
+
+### Site timezone on the box (2026-11-12)
+
+- Hotel boxes run on UTC; Chrome drew clocks in the box's zone. The player now starts Chrome
+  with `TZ=<manifest.player.site_tz>` and restarts only Chrome when the site timezone
+  changes (ffmpeg keeps grabbing, the TS continues). `status` reports `timezone`.
+  Verified: box at 00:43 UTC → channel shows 20:43 Thu 12 Nov for America/Barbados.
