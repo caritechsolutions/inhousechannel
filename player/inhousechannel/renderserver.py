@@ -25,9 +25,10 @@ SHELL_HTML = b"""<!doctype html><html><head><meta charset="utf-8"><title>inhouse
 iframe{position:absolute;inset:0;width:100vw;height:100vh;border:0}</style></head>
 <body><iframe id="f" src="/slate/"></iframe>
 <script>
-var cur="/slate/";
+var cur="/slate/", rev="";
 function poll(){fetch("/current.json",{cache:"no-store"}).then(function(r){return r.json()}).then(function(c){
-  if(c.url&&c.url!==cur){cur=c.url;document.getElementById("f").src=c.url+(c.url.indexOf("?")<0?"?":"&")+"t="+Date.now();}
+  // reload when the layout changes OR the same layout was re-published (rev = content hash)
+  if(c.url&&(c.url!==cur||(c.rev||"")!==rev)){cur=c.url;rev=c.rev||"";document.getElementById("f").src=c.url+(c.url.indexOf("?")<0?"?":"&")+"t="+Date.now();}
 }).catch(function(){}).then(function(){setTimeout(poll,2000)});}
 poll();
 </script></body></html>"""
@@ -42,14 +43,17 @@ class RenderServer:
         self.layouts_dir = layouts_dir
         self.current_url = "/slate/"
         self.current_layout_id = None
+        self.current_rev = ""
         self._httpd = None
         self._thread = None
 
-    def set_current(self, layout_id, layout_dir: Optional[str]) -> bool:
-        """Point the shell at a layout dir (or the slate when None). Returns True on change."""
+    def set_current(self, layout_id, layout_dir: Optional[str], rev: str = "") -> bool:
+        """Point the shell at a layout dir (or the slate when None). `rev` identifies the layout
+        content (hash of layout.json) so a re-published layout reloads too. True on change."""
         url = "/layouts/%s/index.html?res=%s" % (layout_id, self.resolution) if layout_dir else "/slate/"
-        changed = url != self.current_url
-        self.current_url, self.current_layout_id = url, (layout_id if layout_dir else None)
+        rev = rev if layout_dir else ""
+        changed = url != self.current_url or rev != self.current_rev
+        self.current_url, self.current_layout_id, self.current_rev = url, (layout_id if layout_dir else None), rev
         return changed
 
     @property
@@ -66,7 +70,7 @@ class RenderServer:
                     return self._send(200, "text/html", SHELL_HTML)
                 if path == "/current.json":
                     return self._send(200, "application/json", json.dumps(
-                        {"url": server.current_url, "layout_id": server.current_layout_id}).encode())
+                        {"url": server.current_url, "layout_id": server.current_layout_id, "rev": server.current_rev}).encode())
                 if path == "/status.json":
                     return self._send(200, "application/json", json.dumps(server.status_fn()).encode())
                 if path.startswith("/slate/"):

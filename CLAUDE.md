@@ -381,3 +381,11 @@ Every step ends with the player still producing a continuous TS on the test box.
   with `TZ=<manifest.player.site_tz>` and restarts only Chrome when the site timezone
   changes (ffmpeg keeps grabbing, the TS continues). `status` reports `timezone`.
   Verified: box at 00:43 UTC → channel shows 20:43 Thu 12 Nov for America/Barbados.
+
+### Re-published layouts reload on the box (2026-11-20)
+
+- Bug: the shell page reloaded its iframe only when the layout *id* changed, so editing the
+  layout that was already playing (e.g. adding slides) rebuilt the cache dir but Chrome kept
+  the old page. Now `/current.json` carries `rev` = hash of the materialised layout.json +
+  ctx.json; the shell reloads when url **or** rev changes. Slideshow rotation itself verified
+  in headless Chromium (22 → 25 → 24 → 23 every 8 s).

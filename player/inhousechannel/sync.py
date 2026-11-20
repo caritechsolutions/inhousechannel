@@ -202,6 +202,18 @@ class Cache:
                 "w": round(zone.get("w", 0) * sx), "h": round(zone.get("h", 0) * sy),
                 "loop": zone.get("loop", True), "mute": bool(zone.get("mute", False)), "files": files}
 
+    def layout_rev(self, layout_id) -> str:
+        """Short hash of the materialised layout.json + ctx.json — changes when a layout is
+        re-published, so the renderer reloads even though the URL is the same."""
+        h = hashlib.sha256()
+        for name in ("layout.json", "ctx.json"):
+            try:
+                with open(os.path.join(self.layout_dir(layout_id), name), "rb") as f:
+                    h.update(f.read())
+            except OSError:
+                pass
+        return h.hexdigest()[:12]
+
     def layout_dir(self, layout_id) -> str:
         return os.path.join(self.root, "layouts", str(layout_id))
 

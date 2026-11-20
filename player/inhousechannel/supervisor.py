@@ -261,8 +261,9 @@ class Supervisor:
         self._apply_timezone()
         lid = self.syncer.current_layout_id()
         d = self.syncer.current_layout_dir()
-        if self.render.set_current(lid, d):
-            self.note("now showing %s" % ("layout %s" % lid if d else "slate"))
+        rev = self.cache.layout_rev(lid) if d else ""
+        if self.render.set_current(lid, d, rev):
+            self.note("now showing %s" % ("layout %s (rev %s)" % (lid, rev) if d else "slate"))
         video = self.syncer.current_video(self.conf.output.resolution) if d else None
         key = lambda v: None if not v else (v["x"], v["y"], v["w"], v["h"], v["loop"], v["mute"], tuple(v["files"]))
         if key(video) != key(self.video):
